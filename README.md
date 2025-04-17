@@ -1,5 +1,9 @@
-# ABM Group Assignment
+# CSS Assignment
 
-## Description
+## Overview
+This project contains some assignments on Computational Social Science (CSS) at Linköping University (LiU).
 
-This is an Agent-Based Modeling (ABM) assignment based on NetLogo, used to explore complex contagion and triad.
+## ABM
+Agent-Based Modelling (ABM) in NetLogo.
+
+The folder contains a group assignment that investigates complex contagion with triads.
