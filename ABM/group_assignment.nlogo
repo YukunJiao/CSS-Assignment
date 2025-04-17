@@ -73,27 +73,61 @@ to infect
 
 end
 
+to test
+  let sender one-of turtles with [ color = green ]
+  ask sender [ infect_triad ]
+  tick
+
+end
+
 ; I'm not sure about the infect_triad.
 ; The calculated centrality values were not normalized.
 ; I tried to normalize them, but I’m not sure if I did it correctly.
 to infect_triad
-  let infected_neighbor one-of out-link-neighbors with [ color = green ]
-
+  let infected_neighbors out-link-neighbors with [ color = green ]
+  let infected_neighbor one-of infected_neighbors
   if infected_neighbor = nobody
-  [ print (word"no infected neighbor") stop ]
-  ask infected_neighbor
-  [
-    let receiver one-of out-link-neighbors
-    ask receiver
-    [
-      if ( weight_type = "degree" ) [ set weight count my-links ]
-      if ( weight_type = "eigenvector" ) [ set weight nw:eigenvector-centrality * 10]
-      if ( weight_type = "betweenness" ) [ set weight nw:betweenness-centrality * 2 / (count turtles - 1) / (count turtles - 2) * 100 ]
+  [ print (word"no infected neighbors") stop ]
 
-      if ( [weight] of self > [threshold] of self ) [set color green]
-    ]
+  let weight_list []
+  let num_who []
+  let possibility_list []
+  ask infected_neighbors
+  [
+    if ( weight_type = "degree" ) [ set weight count my-links ]
+    if ( weight_type = "eigenvector" ) [ set weight nw:eigenvector-centrality * 10]
+    if ( weight_type = "betweenness" ) [ set weight nw:betweenness-centrality * 2 / (count turtles - 1) / (count turtles - 2) * 100 ]
+
+    let possibility ([ weight ] of self - [threshold] of self)
+
+    set weight_list lput weight weight_list
+    set num_who lput [who] of self num_who
+    set possibility_list lput possibility possibility_list
   ]
+  print word"weight_list: "weight_list
+  show word"MAX Value: "max weight_list
+  show word"Who List: "num_who
+  show word"MAX Index: "position max weight_list weight_list
+  show word"Possibility list: " possibility_list
+  show word"MAX Possibility list: " max possibility_list
+  show word"MAX Possibility Index: "position max possibility_list possibility_list
+  let temp position max possibility_list possibility_list
+  let top_who item temp num_who
+  show top_who
+
+  let receiver one-of infected_neighbors with [ who != item temp num_who ]
+  if receiver = nobody
+  [ print (word"no receiver (There is ONLY one infected neighbor)") stop ]
+  show receiver
+
+  ask receiver
+  [
+    create-link-with turtle top_who [ set color orange ]
+  ]
+
+
 end
+
 
 to output
 
@@ -167,7 +201,6 @@ to layout-turtles
   ]
   display
 end
-
 
 
 
@@ -273,7 +306,7 @@ num_nodes
 num_nodes
 0
 1000
-245.0
+78.0
 1
 1
 NIL
@@ -287,7 +320,7 @@ CHOOSER
 layout
 layout
 "spring" "circle" "radial" "tutte"
-2
+0
 
 BUTTON
 151
@@ -342,7 +375,7 @@ CHOOSER
 weight_type
 weight_type
 "degree" "eigenvector" "betweenness" "pagerank"
-0
+1
 
 MONITOR
 62
@@ -423,6 +456,23 @@ false
 "" ""
 PENS
 "default" 1.0 0 -16777216 true "" "plot delta_infected * 100"
+
+BUTTON
+956
+125
+1019
+158
+NIL
+test
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
 
 @#$#@#$#@
 ## WHAT IS IT?
