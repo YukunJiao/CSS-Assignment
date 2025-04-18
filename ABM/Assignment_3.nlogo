@@ -45,6 +45,10 @@ to update_layout
 end
 
 to go
+
+  if (ticks = 150)
+  [stop]
+
   let temp_num count turtles with [ color = red ]
   print (word"the n of red nodes before a tick: "temp_num)
 
@@ -72,7 +76,6 @@ to infect
   ; the re-infection of which should be reasonable.
 
 end
-
 
 ; I'm not sure about the infect_triad.
 ; The calculated centrality values were not normalized.
@@ -112,7 +115,7 @@ to infect_triad
   let top_who item temp num_who
   ;show top_who
 
-  let receiver one-of infected_neighbors with [ who != item temp num_who ]
+  let receiver one-of infected_neighbors with [ who != top_who ]
   if receiver = nobody
   [ ;print (word"no receiver (There is ONLY one infected neighbor)")
     stop ]
@@ -134,7 +137,8 @@ to infect_triad
       if ( weight_type = "betweenness" ) [ set weight nw:betweenness-centrality * 2 / (count turtles - 1) / (count turtles - 2) * 100 ]
       if ( weight_type = "pagerank" ) [ set weight nw:page-rank * 100  ]
 
-      if ( [weight] of self > [threshold] of self ) [set color red]
+      ;if ( [weight] of myself > [threshold] of self ) [set color red]
+      ; infected_neighbor's weight > target's threshold
     ]
   ]
 
@@ -217,7 +221,6 @@ end
 
 
 
-
 @#$#@#$#@
 GRAPHICS-WINDOW
 479
@@ -254,7 +257,7 @@ CHOOSER
 network
 network
 "small world" "scale free" "random"
-1
+2
 
 BUTTON
 63
@@ -316,7 +319,7 @@ num_nodes
 num_nodes
 0
 1000
-1000.0
+69.0
 1
 1
 NIL
@@ -330,7 +333,7 @@ CHOOSER
 layout
 layout
 "spring" "circle" "radial" "tutte"
-1
+2
 
 BUTTON
 151
@@ -403,8 +406,8 @@ MONITOR
 294
 266
 339
-count green nodes
-count turtles with [ color = green ]
+count red nodes
+count turtles with [ color = red ]
 17
 1
 11
@@ -432,8 +435,8 @@ MONITOR
 342
 267
 387
-Percentage of green nodes
-word (precision (count turtles with [ color = green ] / count turtles * 100 ) 1) \"%\"
+Percentage of red nodes
+word (precision (count turtles with [ color = red ] / count turtles * 100 ) 1) \"%\"
 17
 1
 11
@@ -443,7 +446,7 @@ MONITOR
 390
 384
 435
-Infection rate (Percentage of green nodes per tick)
+Infection rate (Percentage of red nodes per tick)
 word (precision (delta_infected * 100) 2) \"%\"
 17
 1
