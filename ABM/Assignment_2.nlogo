@@ -6,14 +6,16 @@ extensions [nw]  ; network extension
 
 globals [n_red_turtles]
 
-turtles-own [threshold memory]
+turtles-own [threshold blacklist]
 
 to setup
   ca
-  ;Small world
+  ; Small World
   if (network_type = "SW")
   [
-  nw:generate-watts-strogatz turtles links 1200 3 0.1
+  ;nw:generate-watts-strogatz -> primitive of the extension
+  ;Structure: Network type + turtle/breed + link + #nodes + neighborhoodsize + rewire prob
+  nw:generate-watts-strogatz turtles links population 3 0.1
     [
       fd 10
       set color green
@@ -26,32 +28,41 @@ to setup
   ; Scale free
   if (network_type = "SF")
   [
-  nw:generate-preferential-attachment turtles links 1200 3
+  ; "nw:generate-preferential-attachment" -> primitive of the extension
+  ;Structure: Network type + turtle/breed + link + #nodes + min degree
+  nw:generate-preferential-attachment turtles links population 3
     [
       set color green
       set shape "circle"
       set size 0.2
     ]
-   layout-radial turtles links (turtle 0)
-   ]
+
+    layout-circle sort turtles 17
+    ;ask turtles [create-links-with n-of 2 other turtles]
+  ]
 
   ; Random network
   if (network_type = "RN")
   [
-  nw:generate-watts-strogatz turtles links 1200 3 0.9
+  ; "nw:generate-preferential-attachment" -> primitive of the extension
+  ;Structure: Network type + turtle/breed + link + #nodes + neighborhoodsize + rewire prob
+  nw:generate-watts-strogatz turtles links population 3 0.9
     [
       fd 10
       set color green
       set shape "circle"
       set size 0.2
     ]
-  layout-radial turtles links (turtle 0)
+  layout-circle sort turtles 17
   ]
 
   ask turtles [ set threshold random 4 ]
 
   ; creating igniter
-  ask one-of turtles [ set color red set memory X] ; -- defining memory
+  ask one-of turtles [ set color red ]
+
+  ask turtles [set blacklist []]
+  ; initializing empty blacklists
 
   reset-ticks
 end
@@ -60,79 +71,107 @@ to go
   if (ticks = 10000) [ stop ]
   if diffusion_type = "simple" [spread]
   if diffusion_type = "complex" [spread_2]
-  fi diffusion_type = "simple modified" [spread_3]
+  if diffusion_type = "simple modified" [spread_3]
   update_output
   tick
 end
 
+; (A) Simple diffusion:
+;¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤
+; if an agent hears the information once, she diffuses it.
 
 to spread
-  ; red turtles diffuse the information if they remember it (memory > 0)
-  ; Important:
-  ; If we ask a task an agent that does not exist, we will get an error.
-  ; That is why we include this statement before the procedure:
-  ; which basically means: "if there is a turtle which could spread something":
-  if any? turtles with [ color = red and memory > 0]
-  [
 
-  ask one-of turtles with [ color = red and memory > 0] ; ---here
+  ask one-of turtles with [ color = red] ; only red turtles diffuse the information
   [
-    if any? link-neighbors with [ color = green ] ;; green = not heard the information
+    ; Remember: we always want to ask first whether there exists any turtle
+    ;which meets the condition we want because if there is no such a turtle,
+    ;we will get an error during the simulation.
+    ; So, instead of asking directly the turtle, I will ask whether such a turtle exists.
+
+    if any? link-neighbors with [ color = green] ;; green = not heard the information
     [
-      ask one-of link-neighbors with [ color = green ]
+      ask one-of link-neighbors with [ color = green]
       [
         set color red
-        set memory X  ;----------------------- receiver activates memory !!!!!!!!!!!!!
       ]
     ]
-   set memory memory - 1 ;-------------------- sender subtracts one value of memory length
-  ]
-
   ]
 end
 
-; (B) complex diffusion
+; (B) Complex diffusion
 ;¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤¤
 
 ; Agents will diffuse the information as long as a certain amount of
-;neighbors greater than their threshold has spread it before.
+;neighbors - greater than their threshold - have spread it before.
 
 to spread_2
-  if any? turtles with [ color = red and memory > 0] ; ----------------------------------------
-  [
-  ask one-of turtles with [ color = red and memory > 0] ;-------------------------
+  ask one-of turtles with [ color = red]
   [
     if any? link-neighbors with [ color = green]
     [
       ask one-of link-neighbors with [ color = green]
       [
         let diffusers count link-neighbors with [ color = red ]
-        let my_threshold [threshold] of self
+
         ifelse diffusers > threshold
-        [ set color red set memory X] ;----------------------------------------
+        [ set color red ]
         [ ]
 
       ]
     ]
-    set memory memory - 1 ;---------------------------------------------------
   ]
+
+end
+
+
+to spread_3
+
+  ask one-of turtles with [ color = red ]
+  [
+    if any? link-neighbors with [ color = green ] ;; green = not heard the information
+    [
+      ask one-of link-neighbors with [ color = green ]
+      [
+        ifelse ( probability > random 101 and (not member? [who] of myself blacklist) )
+        [ set color red ]
+        [ set blacklist lput [who] of myself blacklist
+          set blacklist remove-duplicates blacklist
+          print (word"Blacklist of sender "who" is: "blacklist)
+          share
+        ]
+      ]
+    ]
   ]
 end
 
+to share
+  if any? other turtles with [ color = green ]
+  [
+    ask one-of other turtles with [ color = green ]
+    [
+      set blacklist sentence blacklist [blacklist] of myself
+      set blacklist remove-duplicates blacklist
+      print (word"Blacklist of receiver "who" is:" blacklist)
+      print (word"Sharing from "[who] of myself" to "who)]
+  ]
+end
 
 to update_output
   let total count turtles with [ color = red]
   set n_red_turtles total
 end
+
+
 @#$#@#$#@
 GRAPHICS-WINDOW
-62
 11
-610
-560
+11
+274
+275
 -1
 -1
-15.0
+7.1
 1
 10
 1
@@ -153,10 +192,10 @@ ticks
 30.0
 
 BUTTON
-622
-77
-718
-126
+292
+78
+388
+127
 NIL
 go
 T
@@ -170,10 +209,10 @@ NIL
 1
 
 BUTTON
-621
-13
-718
-69
+291
+14
+388
+70
 NIL
 setup
 NIL
@@ -187,20 +226,20 @@ NIL
 1
 
 CHOOSER
-623
-147
-761
-192
+32
+317
+170
+362
 network_type
 network_type
 "SW" "SF" "RN"
-1
+0
 
 PLOT
-631
-217
-935
-386
+296
+204
+456
+343
 Diffusion
 Time
 NIL
@@ -215,20 +254,20 @@ PENS
 "default" 1.0 0 -16777216 true "" "let PercDiffusion (count turtles with [ color = red] / count turtles) * 100\nplot PercDiffusion"
 
 CHOOSER
-774
-148
-912
-193
+32
+367
+170
+412
 diffusion_type
 diffusion_type
-"simple" "complex"
-1
+"simple" "complex" "simple modified"
+2
 
 MONITOR
-719
-402
-790
-447
+386
+350
+457
+395
 NIL
 count links
 17
@@ -236,10 +275,10 @@ count links
 11
 
 MONITOR
-630
-402
-713
-447
+297
+350
+380
+395
 NIL
 count turtles
 17
@@ -247,11 +286,11 @@ count turtles
 11
 
 BUTTON
-748
-36
-829
-86
-NIL
+292
+136
+373
+186
+go once
 go
 NIL
 1
@@ -264,15 +303,30 @@ NIL
 1
 
 SLIDER
-743
-104
-915
-137
-X
-X
-1
+32
+280
+204
+313
+population
+population
+20
+1200
+1200.0
 10
-10.0
+1
+NIL
+HORIZONTAL
+
+SLIDER
+32
+415
+204
+448
+probability
+probability
+0
+100
+80.0
 1
 1
 NIL
@@ -625,7 +679,7 @@ NetLogo 6.4.0
 @#$#@#$#@
 @#$#@#$#@
 <experiments>
-  <experiment name="experiment" repetitions="4" runMetricsEveryStep="true">
+  <experiment name="experiment" repetitions="8" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
     <metric>n_red_turtles</metric>
@@ -638,11 +692,8 @@ NetLogo 6.4.0
       <value value="&quot;simple&quot;"/>
       <value value="&quot;complex&quot;"/>
     </enumeratedValueSet>
-    <enumeratedValueSet variable="X">
-      <value value="2"/>
-      <value value="3"/>
-      <value value="6"/>
-      <value value="9"/>
+    <enumeratedValueSet variable="population">
+      <value value="1200"/>
     </enumeratedValueSet>
   </experiment>
 </experiments>
