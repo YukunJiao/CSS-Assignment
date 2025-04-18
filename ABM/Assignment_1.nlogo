@@ -1,229 +1,52 @@
-extensions [ nw ]
+; ABM Assignment 1
+; Yukun Jiao
+; yukji739@student.liu.se
 
-globals [ delta_infected ] ; delta_infected is used to measure infection rate
+turtles-own [ money ]
 
-turtles-own [ threshold weight ] ; if weight of A > threshold of B, node A will infect node B.
-
-
-
-; initiating a network, a green patient zero, and thresholds of nodes
 to setup
   ca
-  if (network = "small world")
-  [
-    nw:generate-watts-strogatz turtles links num_nodes 3 0.1 [set color red fd 10]
-  ]
-
-  if (network = "scale free")
-  [
-    nw:generate-preferential-attachment turtles links num_nodes 2 [set color red fd 10]
-    ; setting num-nodes 1 can make the scale-free network more recognizable with no triads xD
-  ]
-
-  if (network = "random")
-  [
-    nw:generate-watts-strogatz turtles links num_nodes 3 0.9 [set color red fd 10]
-    ;nw:generate-random turtles links num_nodes 0.1 [set color red fd 10]
-  ]
-
-  ask turtles [ set shape "circle" set size 0.5 ]
-
-
-  ; If this green patient zero does not have a high weight, we cannot proceed with our simulation.
-  ; So for convenience, we set its weight to the maximum value of 10.
-
-  ; ask one-of turtles [ set color green set size 0.5 set weight random 10 + 1 ]
-  ask one-of turtles [ set color green set size 0.5 set weight 10 ]
-
-  ask turtles [ set threshold random 10 + 1 ]
-
+  create-turtles 100 [ set money 100 ]
   reset-ticks
 end
 
-to update_layout
-  layout-turtles
-end
-
 to go
-  let temp_num count turtles with [ color = green ]
-  print (word"the n of green nodes before a tick: "temp_num)
-
-  ifelse transitive_infection
-  [
-    ask turtles with [ color = green ] [ infect infect_triad ]
-    tick
-  ]
-  [
-    ask turtles with [ color = green ] [ infect ]
-    tick
-  ]
-
-  set delta_infected (count turtles with [ color = green ] - temp_num) / num_nodes
-  print (word"the n of green nodes: "count turtles with [ color = green ])
-  ;print (delta_infected)
-end
-
-to infect
-  let neighbor one-of out-link-neighbors
-  if ( [weight] of self > [threshold] of neighbor )
-  [ ask neighbor [ set color green ] ]
-  ; I didn't exclude the overlapping green nodes here.
-  ; Consedering that information can tranfer to the same nodes again,
-  ; the re-infection of which should be reasonable.
-
+  if (ticks = 50000) [stop]
+  ask turtles with [ money > 0 ] [ give_money ]
+  tick
 end
 
 
-; I'm not sure about the infect_triad.
-; The calculated centrality values were not normalized.
-; I tried to normalize them, but I’m not sure if I did it correctly.
-to infect_triad
-  let infected_neighbors out-link-neighbors with [ color = green ]
-  let infected_neighbor one-of infected_neighbors
-  if infected_neighbor = nobody
-  [ ;print (word"no infected neighbors")
-    stop ]
-
-  let weight_list []
-  let num_who []
-  let possibility_list []
-  ask infected_neighbors
+to give_money
+  if mode = "original"
   [
-    if ( weight_type = "degree" ) [ set weight count my-links ]
-    if ( weight_type = "eigenvector" ) [ set weight nw:eigenvector-centrality * 10]
-    if ( weight_type = "betweenness" ) [ set weight nw:betweenness-centrality * 2 / (count turtles - 1) / (count turtles - 2) * 100 ]
-    if ( weight_type = "pagerank" ) [ set weight nw:page-rank * 100  ]
-    ; These differernt centrality measures are difficult to compare with each other.
-
-    let possibility ([ weight ] of self - [threshold] of self)
-
-    set weight_list lput weight weight_list
-    set num_who lput [who] of self num_who
-    set possibility_list lput possibility possibility_list
-  ]
-  ;print word"weight_list: "weight_list
-  ;show word"MAX Value: "max weight_list
-  ;show word"Who List: "num_who
-  ;show word"MAX Index: "position max weight_list weight_list
-  ;show word"Possibility list: " possibility_list
-  ;show word"MAX Possibility list: " max possibility_list
-  ;show word"MAX Possibility Index: "position max possibility_list possibility_list
-  let temp position max possibility_list possibility_list
-  let top_who item temp num_who
-  ;show top_who
-
-  let receiver one-of infected_neighbors with [ who != item temp num_who ]
-  if receiver = nobody
-  [ ;print (word"no receiver (There is ONLY one infected neighbor)")
-    stop ]
-  ;show receiver
-
-  ask receiver
-  [
-    create-link-with turtle top_who [ set color orange ]
+    ask one-of other turtles [ set money money + 1 ]
+    set money money - 1
   ]
 
-  ask infected_neighbor
+
+
+  if mode = "extended"
   [
-    ; A -> B, B -> C, C is more possible to be infected with infectors A and B.
-    let target one-of out-link-neighbors
-    ask target
+    let receiver one-of other turtles
+    ask receiver
     [
-      if ( weight_type = "degree" ) [ set weight count my-links ]
-      if ( weight_type = "eigenvector" ) [ set weight nw:eigenvector-centrality * 10]
-      if ( weight_type = "betweenness" ) [ set weight nw:betweenness-centrality * 2 / (count turtles - 1) / (count turtles - 2) * 100 ]
-      if ( weight_type = "pagerank" ) [ set weight nw:page-rank * 100  ]
-
-      if ( [weight] of self > [threshold] of self ) [set color green]
+      set money money + 1
+      if ([money] of self > 151) and (any? turtles with [money <= 50])
+      [
+        set money money - 1
+        ask one-of turtles with [money <= 50] [set money money + 1]
+      ]
     ]
+    set money money - 1
   ]
 
 end
-
-
-to output
-
-end
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; These following codes are from NW General Examples,
-; which you can find in "Code Examples/Extension Examples/nw/" or by searching "nw".
-
-to betweenness
-  centrality [ -> nw:betweenness-centrality ]
-end
-
-to eigenvector
-  centrality [ -> nw:eigenvector-centrality ]
-end
-
-to closeness
-  centrality [ -> nw:closeness-centrality ]
-end
-
-; Takes a centrality measure as a reporter task, runs it for all nodes
-; and set labels, sizes and colors of turtles to illustrate result
-to centrality [ measure ]
-  nw:set-context turtles links
-  ask turtles [
-    let res (runresult measure) ; run the task for the turtle
-    ifelse is-number? res [
-      set label precision res 2
-      set size res ; this will be normalized later
-    ]
-    [ ; if the result is not a number, it is because eigenvector returned false (in the case of disconnected graphs
-      set label res
-      set size 1
-    ]
-  ]
-  normalize-sizes-and-colors
-end
-
-to normalize-sizes-and-colors
-  if count turtles > 0 [
-    let sizes sort [ size ] of turtles ; initial sizes in increasing order
-    let delta last sizes - first sizes ; difference between biggest and smallest
-    ifelse delta = 0 [ ; if they are all the same size
-      ask turtles [ set size 1 ]
-    ]
-    [ ; remap the size to a range between 0.5 and 2.5
-      ask turtles [ set size ((size - first sizes) / delta) * 2 + 0.5 ]
-    ]
-    ask turtles [ set color scale-color red size 0 5 ] ; using a higher range max not to get too white...
-  ]
-end
-
-to layout-turtles
-  if layout = "radial" and count turtles > 1 [
-    let root-agent max-one-of turtles [ count my-links ]
-    layout-radial turtles links root-agent
-  ]
-  if layout = "spring" [
-    let factor sqrt count turtles
-    if factor = 0 [ set factor 1 ]
-    layout-spring turtles links (1 / factor) (14 / factor) (1.5 / factor)
-  ]
-  if layout = "circle" [
-    layout-circle sort turtles max-pxcor * 0.9
-  ]
-  if layout = "tutte" [
-    layout-circle sort turtles max-pxcor * 0.9
-    layout-tutte max-n-of (count turtles * 0.5) turtles [ count my-links ] links 12
-  ]
-  display
-end
-
-
-
-
-
-
 @#$#@#$#@
 GRAPHICS-WINDOW
-479
+210
 10
-916
+647
 448
 -1
 -1
@@ -234,34 +57,41 @@ GRAPHICS-WINDOW
 1
 1
 0
-0
-0
+1
+1
 1
 -16
 16
 -16
 16
-1
-1
+0
+0
 1
 ticks
 30.0
 
-CHOOSER
-313
-10
-451
-55
-network
-network
-"small world" "scale free" "random"
+BUTTON
+24
+57
+87
+90
+NIL
+go
+T
 1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+0
 
 BUTTON
-63
-10
-129
-43
+23
+16
+89
+49
 NIL
 setup
 NIL
@@ -274,199 +104,44 @@ NIL
 NIL
 1
 
-BUTTON
-63
-52
-129
-85
-go once
-go
-NIL
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-0
-
-BUTTON
-63
-96
-126
-129
-NIL
-go
-T
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-0
-
-SLIDER
-151
-10
-268
-43
-num_nodes
-num_nodes
-0
-1000
-1000.0
-1
-1
-NIL
-HORIZONTAL
-
 CHOOSER
-313
-59
-451
-104
-layout
-layout
-"spring" "circle" "radial" "tutte"
+24
+100
+162
+145
+mode
+mode
+"original" "extended"
 1
-
-BUTTON
-151
-98
-270
-131
-NIL
-update_layout
-T
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-1
-
-BUTTON
-150
-54
-269
-87
-NIL
-update_layout\n
-NIL
-1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
-1
-
-SWITCH
-313
-155
-463
-188
-transitive_infection
-transitive_infection
-0
-1
--1000
-
-CHOOSER
-313
-107
-451
-152
-weight_type
-weight_type
-"degree" "eigenvector" "betweenness" "pagerank"
-0
-
-MONITOR
-62
-294
-143
-339
-NIL
-count links
-17
-1
-11
-
-MONITOR
-150
-294
-266
-339
-count green nodes
-count turtles with [ color = green ]
-17
-1
-11
 
 PLOT
-62
-138
-262
-288
-Degree distribution
-Nodes
-N of nodes
+6
+214
+206
+404
+Money distribution
+Money
+Population 
 0.0
-20.0
+400.0
 0.0
-10.0
-true
+15.0
 false
-"" ""
+false
+"set-histogram-num-bars 40" ""
 PENS
-"default" 1.0 1 -16777216 true "" "histogram [ count my-links ] of turtles"
+"default" 1.0 1 -16777216 true "" "histogram [money] of turtles"
 
 MONITOR
-62
-342
-267
-387
-Percentage of green nodes
-word (precision (count turtles with [ color = green ] / count turtles * 100 ) 1) \"%\"
+22
+156
+115
+201
+NIL
+count turtles
 17
 1
 11
-
-MONITOR
-62
-390
-384
-435
-Infection rate (Percentage of green nodes per tick)
-word (precision (delta_infected * 100) 2) \"%\"
-17
-1
-11
-
-PLOT
-276
-190
-476
-380
-Infection rate
-Time
-Speed of spread
-0.0
-10.0
-0.0
-10.0
-true
-false
-"" ""
-PENS
-"default" 1.0 0 -16777216 true "" "plot delta_infected * 100"
 
 @#$#@#$#@
 ## WHAT IS IT?
