@@ -1,0 +1,45 @@
+---
+title: "DSSS_Assignment_1"
+author: "Yukun Jiao"
+date: last-modified
+date-format: "MMMM DD, YYYY"
+format: html
+editor: source
+---
+```{r}
+#| include: false
+library(httr)
+library(XML)
+library(stringr)
+library(selenium)
+```
+
+## Present project, discuss ethics and legality
+```{r}
+url <- "https://link.springer.com/journal/42001"
+screenshot <- function(what) {
+  base64 <- what$screenshot()
+  raw <- base64enc::base64decode(base64)
+  writeBin(raw, "screenshot.png")
+}
+```
+
+## Create a crawler
+
+## Restructure the page
+
+## Extract elements
+
+## Bind them together, store them
+
+## Move to the next page
+
+## Output a data frame
+
+## Clean it using regexes
+
+## Analysis
+
+## Headless browser for dynamic page loading
+
+##  

@@ -92,7 +92,7 @@ to infect_triad
   let possibility_list []
   ask infected_neighbors
   [
-    if ( weight_type = "degree" ) [ set weight count my-links ]
+    if ( weight_type = "degree" ) [ set weight count my-links]
     if ( weight_type = "eigenvector" ) [ set weight nw:eigenvector-centrality * 10]
     if ( weight_type = "betweenness" ) [ set weight nw:betweenness-centrality * 2 / (count turtles - 1) / (count turtles - 2) * 100 ]
     if ( weight_type = "pagerank" ) [ set weight nw:page-rank * 100  ]
@@ -104,16 +104,16 @@ to infect_triad
     set num_who lput [who] of self num_who
     set possibility_list lput possibility possibility_list
   ]
-  ;print word"weight_list: "weight_list
-  ;show word"MAX Value: "max weight_list
-  ;show word"Who List: "num_who
-  ;show word"MAX Index: "position max weight_list weight_list
-  ;show word"Possibility list: " possibility_list
-  ;show word"MAX Possibility list: " max possibility_list
-  ;show word"MAX Possibility Index: "position max possibility_list possibility_list
+  print word"weight_list: "weight_list
+  show word"MAX Value: "max weight_list
+  show word"Who List: "num_who
+  show word"MAX Index: "position max weight_list weight_list
+  show word"Possibility list: " possibility_list
+  show word"MAX Possibility list: " max possibility_list
+  show word"MAX Possibility Index: "position max possibility_list possibility_list
   let temp position max possibility_list possibility_list
   let top_who item temp num_who
-  ;show top_who
+  show top_who
 
   let receiver one-of infected_neighbors with [ who != top_who ]
   if receiver = nobody
@@ -137,7 +137,7 @@ to infect_triad
       if ( weight_type = "betweenness" ) [ set weight nw:betweenness-centrality * 2 / (count turtles - 1) / (count turtles - 2) * 100 ]
       if ( weight_type = "pagerank" ) [ set weight nw:page-rank * 100  ]
 
-      ;if ( [weight] of myself > [threshold] of self ) [set color red]
+      if ( [weight] of myself > [threshold] of self ) [set color red]
       ; infected_neighbor's weight > target's threshold
     ]
   ]
@@ -220,7 +220,6 @@ end
 
 
 
-
 @#$#@#$#@
 GRAPHICS-WINDOW
 479
@@ -257,7 +256,7 @@ CHOOSER
 network
 network
 "small world" "scale free" "random"
-2
+1
 
 BUTTON
 63
@@ -319,7 +318,7 @@ num_nodes
 num_nodes
 0
 1000
-69.0
+48.0
 1
 1
 NIL
@@ -333,7 +332,7 @@ CHOOSER
 layout
 layout
 "spring" "circle" "radial" "tutte"
-2
+0
 
 BUTTON
 151
