@@ -1,8 +1,8 @@
 extensions [ nw ]
 
-globals [ delta_infected ] ; delta_infected is used to measure infection rate
+globals [ delta_infected new_infected] ; delta_infected is used to measure infection rate
 
-turtles-own [ threshold weight ] ; if weight of A > threshold of B, node A will infect node B.
+turtles-own [ threshold weight normalized_weight threshold_output] ; if weight of A > threshold of B, node A will infect node B.
 
 
 
@@ -30,12 +30,32 @@ to setup
 
 
   ; If this red patient zero does not have a high weight, we cannot proceed with our simulation.
-  ; So for convenience, we set its weight to the maximum value of 10.
+  ; So for convenience, we set its weight to the maximum value of 10. (deleted now, replaced by a measured centrality)
 
   ; ask one-of turtles [ set color red set size 0.5 set weight random 10 + 1 ]
-  ask one-of turtles [ set color red set size 0.5 set weight 10 ]
+  ; ask one-of turtles [ set color red set size 0.5 set weight 10 ]
+
+  ask turtles [
+    if ( weight_type = "degree" ) [ set weight count my-links]
+    if ( weight_type = "eigenvector" ) [ set weight nw:eigenvector-centrality * 10]
+    if ( weight_type = "betweenness" ) [ set weight nw:betweenness-centrality * 2 / (count turtles - 1) / (count turtles - 2) * 100 ]
+    if ( weight_type = "pagerank" ) [ set weight nw:page-rank * 100  ]
+  ]
+
+  let min_weight min [weight] of turtles
+  let max_weight max [weight] of turtles
+
+  ask turtles [
+    ifelse (max_weight != min_weight)
+    [set normalized_weight ( (weight - min_weight) / (max_weight - min_weight) ) * 10]
+    [set normalized_weight 5]
+  ]
+
+  ask one-of turtles [ set color red set size 0.5]
 
   ask turtles [ set threshold random 10 + 1 ]
+
+  ask turtles [ set threshold_output random 10 + 1 ]
 
   reset-ticks
 end
@@ -61,15 +81,33 @@ to go
     ask turtles with [ color = red ] [ infect ]
     tick
   ]
-
-  set delta_infected (count turtles with [ color = red ] - temp_num) / num_nodes
+  set new_infected count turtles with [ color = red ] - temp_num
+  set delta_infected new_infected / num_nodes
   print (word"the n of red nodes: "count turtles with [ color = red ])
+
+    ask turtles [
+    if ( weight_type = "degree" ) [ set weight count my-links]
+    if ( weight_type = "eigenvector" ) [ set weight nw:eigenvector-centrality * 10]
+    if ( weight_type = "betweenness" ) [ set weight nw:betweenness-centrality * 2 / (count turtles - 1) / (count turtles - 2) * 100 ]
+    if ( weight_type = "pagerank" ) [ set weight nw:page-rank * 100  ]
+  ]
+
+  let min_weight min [weight] of turtles
+  let max_weight max [weight] of turtles
+
+  ask turtles [
+    ifelse (max_weight != min_weight)
+    [set normalized_weight ( (weight - min_weight) / (max_weight - min_weight) ) * 10]
+    [set normalized_weight 5]
+  ]
+
   ;print (delta_infected)
 end
 
 to infect
   let neighbor one-of out-link-neighbors
-  if ( [weight] of self > [threshold] of neighbor )
+  ;if ( [weight] of self > [threshold] of neighbor )
+  if ( [normalized_weight] of self > [threshold] of neighbor )
   [ ask neighbor [ set color red ] ]
   ; I didn't exclude the overlapping red nodes here.
   ; Consedering that information can tranfer to the same nodes again,
@@ -98,22 +136,22 @@ to infect_triad
     if ( weight_type = "pagerank" ) [ set weight nw:page-rank * 100  ]
     ; These differernt centrality measures are difficult to compare with each other.
 
-    let possibility ([ weight ] of self - [threshold] of self)
-
+    let possibility ([ normalized_weight ] of self - [threshold_output] of self)
+    ; possibility is influencer_score as we discussed.
     set weight_list lput weight weight_list
     set num_who lput [who] of self num_who
     set possibility_list lput possibility possibility_list
   ]
-  print word"weight_list: "weight_list
-  show word"MAX Value: "max weight_list
-  show word"Who List: "num_who
-  show word"MAX Index: "position max weight_list weight_list
-  show word"Possibility list: " possibility_list
-  show word"MAX Possibility list: " max possibility_list
-  show word"MAX Possibility Index: "position max possibility_list possibility_list
+  ;print word"weight_list: "weight_list
+  ;show word"MAX Value: "max weight_list
+  ;show word"Who List: "num_who
+  ;show word"MAX Index: "position max weight_list weight_list
+  ;show word"Possibility list: " possibility_list
+  ;show word"MAX Possibility list: " max possibility_list
+  ;show word"MAX Possibility Index: "position max possibility_list possibility_list
   let temp position max possibility_list possibility_list
   let top_who item temp num_who
-  show top_who
+  ;show top_who
 
   let receiver one-of infected_neighbors with [ who != top_who ]
   if receiver = nobody
@@ -126,30 +164,36 @@ to infect_triad
     create-link-with turtle top_who [ set color orange ]
   ]
 
-  ask infected_neighbor
-  [
+  ;ask infected_neighbor
+  ;[
     ; A -> B, B -> C, C is more possible to be infected with infectors A and B.
-    let target one-of out-link-neighbors
-    ask target
-    [
-      if ( weight_type = "degree" ) [ set weight count my-links ]
-      if ( weight_type = "eigenvector" ) [ set weight nw:eigenvector-centrality * 10]
-      if ( weight_type = "betweenness" ) [ set weight nw:betweenness-centrality * 2 / (count turtles - 1) / (count turtles - 2) * 100 ]
-      if ( weight_type = "pagerank" ) [ set weight nw:page-rank * 100  ]
+    ;let target one-of out-link-neighbors
+    ;ask target
+    ;[
+      ;if ( weight_type = "degree" ) [ set weight count my-links ]
+      ;if ( weight_type = "eigenvector" ) [ set weight nw:eigenvector-centrality * 10]
+      ;if ( weight_type = "betweenness" ) [ set weight nw:betweenness-centrality * 2 / (count turtles - 1) / (count turtles - 2) * 100 ]
+      ;if ( weight_type = "pagerank" ) [ set weight nw:page-rank * 100  ]
 
-      if ( [weight] of myself > [threshold] of self ) [set color red]
+      ;if ( [weight] of myself > [threshold] of self ) [set color red]
       ; infected_neighbor's weight > target's threshold
-    ]
-  ]
+    ;]
+  ;]
 
 end
 
 
-to output
-
+to-report infection_rate
+  report precision (delta_infected * 100) 2
 end
 
+to-report num_new_infected
+  report delta_infected * count turtles
+end
 
+to-report num_infected
+  report count turtles with [ color = red ]
+end
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; These following codes are from NW General Examples,
 ; which you can find in "Code Examples/Extension Examples/nw/" or by searching "nw".
@@ -217,9 +261,6 @@ to layout-turtles
   ]
   display
 end
-
-
-
 @#$#@#$#@
 GRAPHICS-WINDOW
 479
@@ -256,7 +297,7 @@ CHOOSER
 network
 network
 "small world" "scale free" "random"
-1
+2
 
 BUTTON
 63
@@ -318,7 +359,7 @@ num_nodes
 num_nodes
 0
 1000
-48.0
+1000.0
 1
 1
 NIL
@@ -332,7 +373,7 @@ CHOOSER
 layout
 layout
 "spring" "circle" "radial" "tutte"
-0
+2
 
 BUTTON
 151
@@ -387,7 +428,7 @@ CHOOSER
 weight_type
 weight_type
 "degree" "eigenvector" "betweenness" "pagerank"
-0
+2
 
 MONITOR
 62
@@ -468,6 +509,64 @@ false
 "" ""
 PENS
 "default" 1.0 0 -16777216 true "" "plot delta_infected * 100"
+
+PLOT
+939
+10
+1226
+154
+Centrality distribution
+NIL
+NIL
+0.0
+50.0
+0.0
+50.0
+true
+false
+"" ""
+PENS
+"default" 1.0 1 -16777216 true "" "histogram [weight] of turtles"
+
+PLOT
+940
+163
+1228
+341
+Normalized centrality distribution
+NIL
+NIL
+0.0
+100.0
+0.0
+500.0
+true
+false
+"" ""
+PENS
+"default" 1.0 1 -16777216 true "" "histogram [normalized_weight] of turtles"
+
+MONITOR
+939
+370
+1033
+415
+NIL
+new_infected
+17
+1
+11
+
+MONITOR
+939
+426
+1067
+471
+NIL
+num_new_infected
+17
+1
+11
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -815,6 +914,33 @@ NetLogo 6.4.0
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@
+<experiments>
+  <experiment name="3networks_4weights" repetitions="50" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <metric>infection_rate</metric>
+    <metric>num_new_infected</metric>
+    <metric>num_infected</metric>
+    <enumeratedValueSet variable="weight_type">
+      <value value="&quot;degree&quot;"/>
+      <value value="&quot;eigenvector&quot;"/>
+      <value value="&quot;betweenness&quot;"/>
+      <value value="&quot;pagerank&quot;"/>
+    </enumeratedValueSet>
+    <steppedValueSet variable="num_nodes" first="100" step="100" last="500"/>
+    <enumeratedValueSet variable="network">
+      <value value="&quot;small world&quot;"/>
+      <value value="&quot;scale free&quot;"/>
+      <value value="&quot;random&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="layout">
+      <value value="&quot;radial&quot;"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="transitive_infection">
+      <value value="true"/>
+    </enumeratedValueSet>
+  </experiment>
+</experiments>
 @#$#@#$#@
 @#$#@#$#@
 default
