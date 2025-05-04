@@ -6,7 +6,7 @@ extensions [nw]  ; network extension
 
 globals [n_red_turtles]
 
-turtles-own [threshold blacklist]
+turtles-own [threshold blacklist last_blacklist]
 
 to setup
   ca
@@ -20,7 +20,7 @@ to setup
       fd 10
       set color green
       set shape "circle"
-      set size 0.2
+      set size 0.5
     ]
   layout-circle sort turtles 17
   ]
@@ -34,7 +34,7 @@ to setup
     [
       set color green
       set shape "circle"
-      set size 0.2
+      set size 0.5
     ]
 
     layout-circle sort turtles 17
@@ -51,7 +51,7 @@ to setup
       fd 10
       set color green
       set shape "circle"
-      set size 0.2
+      set size 0.5
     ]
   layout-circle sort turtles 17
   ]
@@ -61,7 +61,11 @@ to setup
   ; creating igniter
   ask one-of turtles [ set color red ]
 
-  ask turtles [set blacklist []]
+  ask turtles
+  [
+    set blacklist []
+    set last_blacklist []
+  ]
   ; initializing empty blacklists
 
   reset-ticks
@@ -133,13 +137,31 @@ to spread_3
     [
       ask one-of link-neighbors with [ color = green ]
       [
+        print (word "Agent " [who] of myself " is trying to infect Agent " [who] of self".")
+
         ifelse ( probability > random 101 and (not member? [who] of myself blacklist) )
-        [ set color red ]
-        [ set blacklist lput [who] of myself blacklist
-          set blacklist remove-duplicates blacklist
-          print (word"Blacklist of sender "who" is: "blacklist)
-          share
+        [ set color red
+          print (word "Agent " [who] of myself " managed to infect Agent " [who] of self".")
         ]
+        [ ifelse ( member? [who] of myself blacklist )
+          [
+            print (word "Agent " [who] of myself " failed to infect Agent " [who] of self".")
+            print (word "Because of the blacklist, regardless of the probability.")
+            print (word "The blacklist of Agent "who" is: "blacklist".")
+            ;print (word "The neighbors of Agent "who" is: "sort [who] of link-neighbors".")
+          ]
+          [
+            print (word "Agent " [who] of myself " failed to infect Agent " [who] of self".")
+            print (word "Because the probability is insufficient, Agent " [who] of myself " will be blacklisted by Agent " [who] of self".")
+            set last_blacklist [who] of myself
+            set blacklist lput [who] of myself blacklist
+            set blacklist sort blacklist
+            ;set blacklist remove-duplicates blacklist
+            print (word "The blacklist of Agent "who" (the blacklist sender) is: "blacklist".")
+            share
+          ]
+        ]
+        print (word "--------------------")
       ]
     ]
   ]
@@ -150,10 +172,12 @@ to share
   [
     ask one-of other turtles with [ color = green ]
     [
-      set blacklist sentence blacklist [blacklist] of myself
+      set blacklist sentence blacklist [last_blacklist] of myself
       set blacklist remove-duplicates blacklist
-      print (word"Blacklist of receiver "who" is:" blacklist)
-      print (word"Sharing from "[who] of myself" to "who)]
+      set blacklist sort blacklist
+      print (word "Sharing ID " [last_blacklist] of myself " from Agent "[who] of myself" to Agent "who".")
+      print (word "The blacklist of Agent "who" (the blacklist receiver) is: " blacklist".")
+    ]
   ]
 end
 
@@ -161,8 +185,6 @@ to update_output
   let total count turtles with [ color = red]
   set n_red_turtles total
 end
-
-
 @#$#@#$#@
 GRAPHICS-WINDOW
 11
@@ -311,7 +333,7 @@ population
 population
 20
 1200
-1200.0
+100.0
 10
 1
 NIL
@@ -331,6 +353,17 @@ probability
 1
 NIL
 HORIZONTAL
+
+MONITOR
+392
+140
+497
+185
+count red turtles
+count turtles with [color = red]
+17
+1
+11
 
 @#$#@#$#@
 ## WHAT IS IT?
