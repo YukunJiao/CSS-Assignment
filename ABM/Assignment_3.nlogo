@@ -2,8 +2,14 @@ extensions [ nw ]
 
 globals [ delta_infected new_infected] ; delta_infected is used to measure infection rate
 
-turtles-own [ threshold weight normalized_weight threshold_output] ; if weight of A > threshold of B, node A will infect node B.
+turtles-own [ threshold weight normalized_weight threshold_output infect_times ] ; if weight of A > threshold of B, node A will infect node B.
 
+; The fans of cat memes form a small community.
+; After cat memes have been spread to a certain extent, the fans start to spontaneously establish connections with each other.
+; People who have already shared or liked cat memes begin to follow each other, interact with each other, and share more similar content.
+
+; This ABM is used to explore echo chamber and algorithms in social media
+; We don't have multiple memes here, so there is no competition between different memes.
 
 
 ; initiating a network, a red patient zero, and thresholds of nodes
@@ -57,6 +63,8 @@ to setup
 
   ask turtles [ set threshold_output random 10 + 1 ]
 
+  ask turtles [ set infect_times 0 ]
+
   reset-ticks
 end
 
@@ -105,10 +113,19 @@ to go
 end
 
 to infect
-  let neighbor one-of out-link-neighbors
+  ;let neighbor one-of link-neighbors
   ;if ( [weight] of self > [threshold] of neighbor )
-  if ( [normalized_weight] of self > [threshold] of neighbor )
-  [ ask neighbor [ set color red ] ]
+  ;if ( [normalized_weight] of self > [threshold] of neighbor )
+  ;[ ask neighbor [ set color red ] ]
+
+  ask link-neighbors
+  [
+    if ( [normalized_weight] of myself > [threshold] of self )
+    [
+      set color red
+      set infect_times infect_times + 1
+    ]
+  ]
   ; I didn't exclude the overlapping red nodes here.
   ; Consedering that information can tranfer to the same nodes again,
   ; the re-infection of which should be reasonable.
@@ -119,7 +136,7 @@ end
 ; The calculated centrality values were not normalized.
 ; I tried to normalize them, but I’m not sure if I did it correctly.
 to infect_triad
-  let infected_neighbors out-link-neighbors with [ color = red ]
+  let infected_neighbors link-neighbors with [ color = red ]
   let infected_neighbor one-of infected_neighbors
   if infected_neighbor = nobody
   [ ;print (word"no infected neighbors")
@@ -167,7 +184,7 @@ to infect_triad
   ;ask infected_neighbor
   ;[
     ; A -> B, B -> C, C is more possible to be infected with infectors A and B.
-    ;let target one-of out-link-neighbors
+    ;let target one-of link-neighbors
     ;ask target
     ;[
       ;if ( weight_type = "degree" ) [ set weight count my-links ]
@@ -359,7 +376,7 @@ num_nodes
 num_nodes
 0
 1000
-1000.0
+300.0
 1
 1
 NIL
@@ -564,6 +581,28 @@ MONITOR
 471
 NIL
 num_new_infected
+17
+1
+11
+
+MONITOR
+1039
+370
+1393
+415
+NIL
+precision mean [ nw:clustering-coefficient ] of turtles 4
+17
+1
+11
+
+MONITOR
+64
+445
+284
+490
+NIL
+precision nw:mean-path-length 3
 17
 1
 11
