@@ -1,0 +1,143 @@
+人类自由指数简介
+
+人类自由指数（Human Freedom Index） 是一项尝试通过多个变量来概括“自由”这一概念的全球性报告。它为各种自由类型（如政治自由、宗教自由、经济自由或个人自由）与其他社会和经济环境之间的关系提供了一个粗略的客观衡量标准。
+该报告由卡托研究所（Cato Institute）、**弗雷泽研究所（Fraser Institute）和自由基金会的自由研究所（Liberales Institut at the Friedrich Naumann Foundation for Freedom）**联合每年发布。
+
+⸻
+
+数据说明
+
+该数据框包含了2008至2016年间的1458条观察记录，覆盖123个变量。
+
+原始资料链接：
+	•	Human Freedom Index 2018
+	•	Human Freedom Index 2016 PDF
+
+⸻
+
+变量翻译与解释
+
+基本信息
+	•	year：年份
+	•	ISO_code：国家的 ISO 编码
+	•	countries：国家名称
+	•	region：国家所在区域
+
+⸻
+
+个人自由（Personal Freedom, pf_ 开头）
+
+法治（Rule of Law）
+	•	pf_rol_procedural：程序性司法
+	•	pf_rol_civil：民事司法
+	•	pf_rol_criminal：刑事司法
+	•	pf_rol：法治总体评分
+
+安全与人身安全（Security and Safety）
+	•	pf_ss_homicide：凶杀案
+	•	pf_ss_disappearances_disap：失踪情况
+	•	pf_ss_disappearances_violent：暴力冲突
+	•	pf_ss_disappearances_organized：有组织的暴力冲突
+	•	pf_ss_disappearances_fatalities：恐怖主义造成的死亡人数
+	•	pf_ss_disappearances_injuries：恐怖主义造成的伤害人数
+	•	pf_ss_disappearances：与冲突、恐怖相关的失踪
+	•	pf_ss_women_fgm：女性割礼
+	•	pf_ss_women_missing：失踪女性
+	•	pf_ss_women_inheritance_widows：寡妇继承权
+	•	pf_ss_women_inheritance_daughters：女儿继承权
+	•	pf_ss_women_inheritance：继承权整体评分
+	•	pf_ss_women：女性安全状况
+	•	pf_ss：安全与人身安全总体评分
+
+行动自由（Freedom of Movement）
+	•	pf_movement_domestic：国内迁徙自由
+	•	pf_movement_foreign：出国自由
+	•	pf_movement_women：女性行动自由
+	•	pf_movement：行动自由总体评分
+
+宗教自由（Religious Freedom）
+	•	pf_religion_estop_establish：建立宗教组织的自由
+	•	pf_religion_estop_operate：运作宗教组织的自由
+	•	pf_religion_estop：建立与运作宗教组织的自由
+	•	pf_religion_harassment：骚扰与敌意
+	•	pf_religion_restrictions：法律与监管限制
+	•	pf_religion：宗教自由总体评分
+
+结社与集会自由（Freedom of Association and Assembly）
+	•	pf_association_association：结社自由
+	•	pf_association_assembly：集会自由
+	•	pf_association_political_establish：建立政党的自由
+	•	pf_association_political_operate：运作政党的自由
+	•	pf_association_political：政党自由
+	•	pf_association_prof_establish：建立职业组织的自由
+	•	pf_association_prof_operate：运作职业组织的自由
+	•	pf_association_prof：职业组织自由
+	•	pf_association_sport_establish：建立教育、体育、文化组织的自由
+	•	pf_association_sport_operate：运作教育、体育、文化组织的自由
+	•	pf_association_sport：教育、体育、文化组织的自由
+	•	pf_association：总体结社与集会自由评分
+
+表达自由（Freedom of Expression）
+	•	pf_expression_killed：被杀害的新闻人员
+	•	pf_expression_jailed：被监禁的新闻人员
+	•	pf_expression_influence：对媒体内容的法律/监管影响
+	•	pf_expression_control：政治压力和控制
+	•	pf_expression_cable：有线/卫星电视接入情况
+	•	pf_expression_newspapers：外国报纸接入情况
+	•	pf_expression_internet：政府对互联网的控制
+	•	pf_expression：表达自由总体评分
+
+身份与关系（Identity and Relationships）
+	•	pf_identity_legal：法定性别
+	•	pf_identity_parental_marriage：婚姻中的父母权利
+	•	pf_identity_parental_divorce：离婚后的父母权利
+	•	pf_identity_parental：父母权利总评分
+	•	pf_identity_sex_male：男性之间的关系合法性
+	•	pf_identity_sex_female：女性之间的关系合法性
+	•	pf_identity_sex：同性关系自由
+	•	pf_identity_divorce：离婚自由
+	•	pf_identity：身份与人际关系评分
+
+总结指标
+	•	pf_score：个人自由得分
+	•	pf_rank：个人自由排名
+
+⸻
+
+经济自由（Economic Freedom, ef_ 开头）
+
+政府规模（Size of Government）
+	•	ef_government_consumption：政府消费
+	•	ef_government_transfers：转移支付与补贴
+	•	ef_government_enterprises：国营企业与投资
+	•	ef_government_tax_income：所得税最高边际税率
+	•	ef_government_tax_payroll：所得税和工资税边际税率
+	•	ef_government_tax：最高税率合并指标
+	•	ef_government：政府规模评分
+
+法律制度与产权（Legal System and Property Rights）
+	•	含司法独立、公正法院、产权保护、执法机制、警察可靠性等变量（如 ef_legal_judicial, ef_legal_enforcement, ef_legal_police）
+	•	ef_legal：法律系统和产权评分
+
+货币政策（Sound Money）
+	•	包括通货膨胀、货币增长、外币账户自由等（如 ef_money_inflation, ef_money_currency）
+	•	ef_money：货币政策评分
+
+国际贸易自由（Freedom to Trade Internationally）
+	•	含关税、黑市汇率、资本流动控制、访问限制等（如 ef_trade_tariffs_mean, ef_trade_movement_foreign）
+	•	ef_trade：国际贸易自由评分
+
+监管制度（Regulation）
+	•	包括信贷市场、劳动力市场、企业开办、腐败等多个方面
+	•	ef_regulation：总体监管评分
+
+总结指标
+	•	ef_score：经济自由得分
+	•	ef_rank：经济自由排名
+
+⸻
+
+综合自由指标（Human Freedom）
+	•	hf_score：人类自由总得分（综合个人与经济自由）
+	•	hf_rank：人类自由总排名
+	•	hf_quartile：自由得分所处的四分位数

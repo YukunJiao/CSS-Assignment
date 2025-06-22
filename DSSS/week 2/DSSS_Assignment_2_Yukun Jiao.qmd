@@ -1,0 +1,589 @@
+---
+title: "How Nations Are Free: Exploring the Link Between Economic and Personal Freedom"
+author: "Yukun Jiao"
+date: last-modified
+date-format: "MMMM DD, YYYY"
+format: pdf
+header-includes:
+  - \usepackage{setspace}
+  - \onehalfspacing
+editor: source
+bibliography: references.bib
+---
+
+```{r}
+#| include: false
+library(tidyverse)
+library(mice)
+library(stringr)
+
+# PCA, MCA
+library(FactoMineR)
+library(explor)
+
+# Clustering
+library(cluster)
+library(NbClust)
+library(factoextra)
+library(ade4)
+
+# t-SNE, SOM
+library(Rtsne)
+library(aweSOM)
+library(Hmisc)
+library(ggplot2)
+```
+
+```{r}
+#| include: false
+HFI <- read.csv("HFI/hfi2008_2016.csv")
+
+supplementary_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 1)] |> c("ISO_code")
+
+rank_vars <- c("hf_rank", "hf_quartile", "ef_rank", "pf_rank")
+
+level1_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 2)] |> setdiff("ISO_code")
+
+sub_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 3)]
+
+ssub_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 4)]
+
+sssub_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 5)]
+```
+
+```{r}
+#| include: false
+########
+score_and_rank <- names(HFI)[grep("rank|score|quartile", names(HFI))]
+
+pf_vars <- names(HFI)[str_detect(names(HFI), "^pf_[^_]+$")] |> setdiff(score_and_rank)
+
+ef_vars <- names(HFI)[str_detect(names(HFI), "^ef_[^_]+$")] |> setdiff(score_and_rank)
+
+parent_vars <- sapply(str_split(sub_vars, "_"), function(parts) {
+  paste(parts[1:2], collapse = "_")
+})
+names(parent_vars) <- sub_vars
+
+mapping_df <- data.frame(
+  sub_vars = names(parent_vars),
+  parent_vars = parent_vars
+)
+
+selected_vars <- c(supplementary_vars, level1_vars, sub_vars)
+
+for (i in 1:2) {
+data <- 
+  HFI |> 
+  filter(!is.na(hf_score)) |> 
+  select(all_of(selected_vars)) |> 
+  mutate(across(all_of(pf_vars), ~ ifelse(is.na(.x), pf_score, .x))) |> 
+  mutate(across(all_of(ef_vars), ~ ifelse(is.na(.x), ef_score, .x))) |> 
+  mutate(across(all_of(mapping_df$sub_vars), ~ {
+    cur_var <- cur_column()
+    parent_var <- mapping_df$parent_vars[mapping_df$sub_vars == cur_var]
+    if(length(parent_var) == 1 && parent_var %in% names(data)) {
+    if_else(is.na(.x), data[[parent_var]], .x)
+    } else {
+      .x
+    }
+    }))
+}
+
+sum(is.na(data))
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+selected_vars <- c(supplementary_vars, level1_vars)
+
+# From 2008 to 2016
+data_PCA <- data |> 
+  select(all_of(selected_vars)) |> 
+  select(-all_of(rank_vars))
+
+freedom_scores <- c("year", "pf_score", "ef_score", "hf_score")
+
+quanti_supp_score <- match(freedom_scores, colnames(data_PCA))
+
+res <- PCA(data_PCA, quanti.sup = quanti_supp_score, quali.sup = c(2, 3, 4), graph = FALSE)
+
+# explor(res)
+
+res_explor <- explor::prepare_results(res)
+PCA_plot_PC12 <- explor::PCA_var_plot(res_explor, xax = 1, yax = 2, var_sup = TRUE, var_sup_choice = c("pf_score",
+    "ef_score", "hf_score"), var_lab_min_contrib = 0, col_var = "Type", labels_size = 10,
+    scale_unit = TRUE, transitions = TRUE, labels_positions = NULL, xlim = c(-0.456,
+        1.23), ylim = c(-0.704, 0.984))
+
+PCA_plot_PC13 <- explor::PCA_var_plot(res_explor, xax = 1, yax = 3, var_sup = FALSE, var_sup_choice = ,
+    var_lab_min_contrib = 0, col_var = "Type", labels_size = 10, scale_unit = TRUE,
+    transitions = TRUE, labels_positions = NULL, xlim = c(-0.43, 1.08), ylim = c(-0.403,
+        1.1))
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+library(gt)
+library(dplyr)
+Variable_freedom <- c("Rule of Law", "Security and Safety", "Movement", "Religion", "Association, Assembly, and Civil Society", "Expression and Information", "Identity and Relationships", "Size of Government", "Legal System and Property Rights", "Access to Sound Money", "Freedom to Trade Internationally", "Regulation of Credit, Labor, and Business")
+
+df_PCA <- as.data.frame(res$var$coord[, 1:4])
+df_PCA$Variable <- Variable_freedom
+df_PCA <- df_PCA |>
+  select(Variable, everything())
+eigenvalues <- res$eig[1:4, 1]
+percentages <- res$eig[1:4, 2]
+
+eigen_row <- data.frame(
+  Variable = "Eigenvalue",
+  Dim.1 = eigenvalues[1],
+  Dim.2 = eigenvalues[2],
+  Dim.3 = eigenvalues[3],
+  Dim.4 = eigenvalues[4]
+)
+percentage_row <- data.frame(
+  Variable = "Percentage (%)",
+  Dim.1 = percentages[1],
+  Dim.2 = percentages[2],
+  Dim.3 = percentages[3],
+  Dim.4 = percentages[4]
+)
+
+df_PCA <- bind_rows(df_PCA, eigen_row, percentage_row)
+
+gt_table <- gt(df_PCA) |> 
+  fmt_number(
+    columns = 2:5,
+    decimals = 3
+  ) |> 
+  fmt_number(
+    rows = 14,
+    columns = 2:5,
+    decimals = 1
+  ) |> 
+  cols_label(
+    Variable = "Variable",
+    Dim.1 = "PC1",
+    Dim.2 = "PC2",
+    Dim.3 = "PC3",
+    Dim.4 = "PC4"
+  )
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+
+data_PCA_2016 <- data |> 
+  filter(year == 2016) |> 
+  select(all_of(selected_vars)) |> 
+  select(-all_of(rank_vars))
+res_2016 <- PCA(data_PCA_2016, quanti.sup = quanti_supp_score, quali.sup = c(2, 3, 4), graph = FALSE)
+
+pc_scores <- as.data.frame(res_2016$ind$coord[, 1:4])
+
+pc_scores$countries <- data_PCA_2016$countries
+pc_scores <- pc_scores |> 
+  select(countries, everything())
+
+tbl_score <- function(dim) {
+  top_10 <- pc_scores |> 
+    arrange(desc({{dim}})) |> 
+    slice_head(n = 10) |> 
+    mutate(Group = "Top 10")
+  
+  bottom_10 <- pc_scores |> 
+    arrange({{dim}}) |> 
+    slice_head(n = 10) |> 
+    mutate(Group = "Bottom 10")
+  
+  top_bottom_10 <- bind_rows(top_10, bottom_10)
+  
+  gt_tbl_scores <- top_bottom_10 |> 
+    select(Group, countries, Dim.1, Dim.2, Dim.3, Dim.4) |> 
+    gt(groupname_col = "Group")|> 
+    fmt_number(
+      columns = 2:5,
+      decimals = 3
+    ) |> 
+    cols_label(
+      Dim.1 = "PC1",
+      Dim.2 = "PC2",
+      Dim.3 = "PC3",
+      Dim.4 = "PC4"
+    )
+return(gt_tbl_scores)
+}
+
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+
+selected_vars <- c(supplementary_vars, level1_vars)
+
+# From 2008 to 2016
+# data_SOM <- data |> 
+#   select(all_of(selected_vars)) |> 
+#   select(-all_of(score_and_rank)) |> 
+#   select(-all_of(supplementary_vars)) |> 
+#   scale()
+# 
+# 
+# countries_year <- paste0(data$countries, "_", data$year)
+# rownames(data_SOM) <- countries_year
+
+# Only for 2016
+selected_vars <- c(supplementary_vars, level1_vars)
+countries_info <- data[data$year == 2016, "countries"]
+region_info <- data[data$year == 2016, "region"]
+
+data_SOM <- data |> 
+  filter(year == 2016) |> 
+  select(all_of(selected_vars)) |> 
+  select(-all_of(score_and_rank)) |> 
+  select(-all_of(supplementary_vars)) |> 
+  scale()
+
+# res_SOM <- PCA(data_SOM)
+# 
+# fviz_nbclust(data_SOM, hcut, hc_method = "ward.D2", method = c("silhouette"))
+
+rownames(data_SOM) <- countries_info
+write.csv(data_SOM, "data_SOM.csv")
+# aweSOM()
+```
+
+
+# Abstract
+
+This study applies PCA and SOM to explore the HFI data from 2008 to 2016, aiming to enhance the understanding of its dimensions. To guide the exploratory analysis, two research questions are formulated:
+
+RQ1: What is the most important dimension or latent dimension of the HFI dataset?
+
+RQ2: What patterns can be observed from clustering countries based on the HFI dataset?
+
+The results of PCA indicate that the first principal component corresponds to a measure of human freedom, the second reflects a measure of authoritarian capitalism, the third reflects a measure of social democracy. Moreover, the rule of law is most important factor contributing to both personal freedom and economic freedom, which is consistent with previous literature.
+
+The results of SOM provide a more comprehensive and combined interpretation of the dimensions, which is broadly consistent with the interpretation of PCA. Furthermore, the results reveal patterns of country clustering, indicating that countries in the 2016 HFI data can be roughly categorized into four superclasses: social democratic countries, capitalist countries with weak rule of law, authoritarian capitalist countries, and countries experiencing conflict (characterized in the data by a general absence of human freedom).
+
+These exploratory results contribute to understanding the underlying factors and patterns that enable certain countries to advance economic freedom even with significantly restricted personal freedom, thereby helping us better investigate different development models.
+
+# Introduction
+
+Friedman points out that there is an intimate connection between economics and politics, and only certain combinations of political and economic arrangements are possible. In particular, a society that is socialist cannot also be democratic in the sense of guaranteeing individual freedom. Economic arrangements play a dual role in promoting a free society: economic freedom is both a component of freedom broadly understood as an end in itself and an indispensable means toward achieving political freedom.
+
+Building upon the understanding of economic and political freedom, it is important to examine the role of the free market and government in sustaining these freedoms. Friedman argued that the role of competitive capitalism the organization of the bulk of economic activity through private enterprise operating in a free market as a system of economic freedom and a necessary condition for political freedom. The competitive capitalism plays a crucial role in limiting the concentration of power by separating economic power from political power. Even in societies where political freedom is lacking, such as Fascist regimes or tsarist Russia, the presence of competitive capitalism and private property provided a check on centralized state power, allowing citizens more freedom than those in totalitarian states where economic and political totalitarianism are combined. Thus, a free market can help constrain government authority and preserve some degree of individual freedom even when political institutions are not fully free [@friedman1982]. In other words, economic freedom can greatly reduce the range of issues that must be decided through political means, thereby minimizing direct government involvement and maximizing personal freedom.
+
+Structural characteristics such as low national income, proximity to the equator, high ethnolinguistic diversity, French or socialist legal origins, and a high proportion of Catholics or Muslims have been found to correlate with inferior government performance [@lopez-de-silanes1999]. Although these factors are associated with lower government performance rather than freedom directly, ineffective governance often limits the protection of rights, the enforcement of contracts, and the overall rule of law—all of which are essential for both personal and economic freedom. In fact, a well-functioning government can support freedom. The generally positive or neutral relationship between government activity and economic freedom suggests that there is no inherent contradiction between the two. Moreover, free markets depend on institutional quality and credible oversight—functions that governments are well-positioned to provide [@ott2018].
+
+Institutional frameworks, especially the rule of law, play a fundamental role in supporting both economic growth and freedom. Over the past decades, scholars have recognized the crucial role of the rule of law in promoting economic growth. By constraining arbitrary governmental actions, the rule of law creates micro-level incentives and provides an institutional framework conducive to investment, entrepreneurship, and long-term capital development. Empirical evidence robustly shows that stability in legal rules, secure property rights, and restraint on arbitrary government actions significantly encourage economic growth. The varying economic outcomes among countries are largely explained by differences in institutional quality, with the rule of law being a key distinguishing factor. In contrast, democratic elections appear far less important for economic growth, as democracy does not necessarily generate the institutions needed for sustained growth and may instead foster redistributive and special interest politics that hinder it. This explains why countries such as Chile, Singapore, and Hong Kong have experienced rapid economic growth despite lacking democratic politics; strong rule of law values in these countries provided an environment conducive to economic prosperity [@zywicki2003].
+
+Building on the theoretical foundations of economic and personal freedom, and recognizing the critical role of institutional quality in supporting these freedoms, it becomes essential to develop rigorous empirical methods to measure and analyze the complex dimensions of human freedom. Among various metrics, the widely cited Human Freedom Index (HFI) provides a comprehensive framework for assessing freedom, yet its constituent dimensions remain insufficiently examined. Previous studies have applied principal component analysis, k-means clustering, and factor analysis to investigate the structure of the Human Freedom Index (HFI), yielding valuable insights [@murphy2025]. Building on previous research, this study employs PCA and SOM to complement existing analyses by exploring data dimensions and topological structure, thereby providing additional insights into the data structure.
+
+Based on the previous review of economic freedom and political freedom, the relationship between the free market, government, and economic freedom, the importance of regulation and the rule of law for economic freedom, this study focuses on the following exploratory questions:
+
+RQ1: What is the most important dimension or latent dimension of the HFI dataset?
+
+RQ2: What patterns can be observed from clustering countries based on the HFI dataset?
+
+# Data
+
+The Human Freedom Index (HFI) presents a broad measure of human freedom, understood as the absence of coercive constraint [@ian2018]. The index is constructed using 79 distinct indicators that capture both personal and economic dimensions of freedom. These indicators span a wide range of 12 areas, including the rule of law, security and safety, freedom of movement, religion, association, assembly, and civil society, as well as freedom of expression and information, identity and relationships, the size of government, the legal system and property rights, access to sound money, freedom to trade internationally, and the regulation of credit, labor, and business.
+
+The HFI is one of the most comprehensive freedom indices constructed for a globally representative set of countries and jurisdictions. The 2018 edition of the index covers 162 jurisdictions and provides annual data from 2008 to 2016. This study uses the 2018 edition as its data source, with freedom measured on a scale of 0 to 10, where 10 represents more freedom. In the data processing of this study, countries with missing Human Freedom Score were excluded; for the remaining observations with missing indicators, the missing values were imputed based on the hierarchical aggregation structure of the index, using the value of the indicator at the higher level.
+
+# Method
+## Principal Component Analysis (PCA)
+
+The goal of PCA is to find a low-dimensional representation of a data set that contains as much as possible of the variation. For n observations and p features, each of the dimensions found by PCA is a linear combination of the p features. These dimensions are the principal components we seek. The first principal component is the normalized linear combination of the features that has the largest variance. The second principal component is the linear combination of $X_1$, \ldots, $X_p$ that has the maximal variance among all linear combinations that are uncorrelated with the first principal component. And so on. That is, PCA finds principal components that are orthogonal to one another, with each having the maximum possible variance.
+
+Once the principal components are computed, we can generate a low-dimensional view of the data. Typically, such a view shows both the principal component scores and the loading vectors. The loading vectors indicate directions in the feature space along which the data vary the most, and the scores are projections of the observations onto these directions. Moreover, the contribution of a variable helps interpret the meaning of each principal component, and the $cos^2$ of a variable can be used to measure the quality of its representation.
+
+A limitation of PCA is that it does not necessarily reflect the practical or theoretical importance of individual variables. Specifically, a variable with a high weight on a principal component merely indicates a strong contribution to explaining variance, but this does not necessarily mean that the variable is more important in practical or theoretical terms.
+
+## Self-Organizing Map (SOM)
+
+SOM is an unsupervised machine learning algorithm based on competitive learning [@kohonen1990]. The SOM represents a distribution of input data items using a finite set of models, in which these models are automatically associated with the nodes of a regular grid in an orderly fashion such that more similar models become automatically associated with nodes that are adjacent in the grid, whereas less similar models are situated farther away from each other in the grid. This organization makes it possible to obtain an insight into the topographic relationships of data, especially of high-dimensional data items. The central idea of SOM is that every input data item shall select the model that matches best with the input item, and this model, as well as a subset of its spatial neighbors in the grid, shall be modified for better matching. The quality of SOM results can be evaluated using quantization error, which measures the average distance between data points and their corresponding map nodes (with smaller values indicating better representation), and topographic error, which assesses how well the SOM preserves the topological structure of the input space by identifying local discontinuities.
+
+To create a SOM, the data first need to be scaled, and then the number of cells must be determined. However, it is not possible to estimate the exact size of the cells in advance. It must be determined by the trial-and-error method, after seeing the quality of the first guess. Typical SOM arrays range from a few dozen to a few hundred nodes, and the relation of the horizontal and vertical dimensions of the array ought to comply at least roughly with the relation of the two largest principal components of the input data, respectively. The number of cells could be determined by a heuristic formula, $M \approx 5\sqrt{N}$, where $M$ is the number of neurons, which is an integer close to the result of the right hand side of the equation, and $N$ is the number of observations [@tian2014]. Given $N = 162$, this yields approximately 64 neurons. Moreover, to preserve the topological structure of the input data, the aspect ratio of the SOM map is chosen to reflect the approximate ratio between the first and second principal components ($\text{PC}_1 / \text{PC}_2 \approx 3$). Based on the above considerations and the results of multiple trials, a $4 \times 12$ map (4 rows and 12 columns) was finally selected.
+
+Moreover, SOM is often used as a kind of histogram on which one displays the number of input data items that is mapped into each of the nodes. In this case, a very coarse rule-of-thumb may be that about 50 items per cell on the average should be sufficient, otherwise the resolution is limited by the sparsity of data [@kohonen2013].
+
+# Results
+
+In the HFI data from 2008 to 2016, the first principal component explains 47.7% of the variance, the second explains 14.7%, and the third explains 9.8%. Together, these three components account for 72.2% of the total variance. The fourth component explains only 5.8% and does not exhibit meaningful patterns. Moreover, as shown in [@fig-scree], there is a clear elbow after the third component. Therefore, only the first three principal components are selected for analysis.
+
+Specifically, as shown in [@tbl-PCA], the first principal component loads positively on all variables except the size of government, and it corresponds to a measure of human freedom. Notably, rule of law contributes the most to this principal component and aligns most closely with its direction, which is consistent with findings from previous literature.
+
+The second principal component places approximately equal weight on all personal freedoms except rule of law and security and safety, indicating specific personal freedom contribute approximately equally. Additionally, it places a small positive weight on the size of government and a negative weight on all economic freedoms except size of government. Overall, this principal component corresponds to a measure of specific personal freedoms or economic freedoms respectively, meaning that specific personal freedom and economic freedom are opposed along this component. Therefore, the second component reflects a form of authoritarian capitalism, characterized by the government promoting economic freedoms while suppressing specific personal freedoms.
+
+The third principal component places most weight on size of government and roughly equal positive weights on several economic freedoms and roughly equal negative weights on several personal freedoms. This loading vector should roughly correspond to a measure of Western European social democracy, except several countries with very large government or very small government.
+
+The fourth principle component loads mainly on identity and relationship. But its Eigenvalue and not so interesting patterns suggests that this loading vector may not be particularly meaningful.
+
+Although the second principal component does not account for the largest amount of variance, its pattern is the most interesting. Therefore, the top and bottom 10 countries by PC2 scores for 2016 are listed separately, as shown in [@tbl-PC2]. The top 10 countries suggest a pattern characterized by a lack of economic freedom. the bottom 10 countries reflect a pattern of relatively high levels of economic freedom, but with notable restrictions on specific personal freedom compared to other democratic countries with similar economic freedom.
+
+To complement the PCA results and gain a more detailed understanding of the data structure, SOM was performed. After determining the number of cells in the method section, the next step is to determine the number of superclasses. As shown in [@fig-screeSOM], there is a clear elbow at the point where the number of superclasses reaches 4. While the silhouette of cell superclasses in [@fig-silhouette] was also considered, its contribution is less pronounced. In fact, when the number of superclasses is less than or equal to 3, the average silhouette width remains high and stable, indicating generally good and consistent clustering performance. However, such a small number of superclasses offers limited explanatory power. After multiple trials and evaluation, the number of superclasses was set to 4 to allow the SOM to achieve the most interpretable clustering outcome. According to [@tbl-Quality_SOM], this map explained 82.79% variance and remained the data topographic structure very well.
+
+Then, the observation cloud of the SOM is shown in [@fig-SOM]. The clustering pattern reveals the following groups: The lower-right corner is dominated by Western European social democracies with a large government size, such as Sweden and Denmark; The upper-right corner clusters Hong Kong and Singapore, representing distinctive economic models with strong rule of law and limited personal freedom; The lower-left corner gathers authoritarian capitalist regimes with limited rule of law and severely restricted personal freedom, such as China and Russia. The upper-left corner consists of countries with severely restricted personal and economic freedoms, likely due to ongoing conflicts or wars. The central yellow cells gather capitalist nations with poorer performance, characterized by weak rule of law and weak legal system and property rights.
+
+Based on [@fig-histogram] and [@fig-radar], a more detailed explanation can be provided. This map corresponds roughly to the interpretation of the three principal components from the previous PCA. With the cell in the lower-left corner established as the origin of a Cartesian coordinate system, where Axis 1 runs from left to right and Axis 2 from bottom to top, Axis 1 represents human freedom. From left to right, a contrast is shown between unfree countries and free countries. Axis 2 corresponds to a measure of authoritarian capitalism and Western European social democracy. From bottom to top, an opposition is reflected between civil and economic freedoms as well as between social democracy and liberalism (Axis 2 does not apply to countries in the upper-left corner).
+
+# Conclusion
+
+This study applies PCA and SOM to explore the latent dimensions and clustering patterns in the HFI dataset from 2008 to 2016. The analysis identifies three key dimensions: human freedom, authoritarian capitalism, and social democracy. The clustering results from SOM complement these findings by clustering countries into four superclasses, highlighting the diverse models through which freedom is structured globally. These insights offer a foundation for further investigation into how different regimes balance economic and personal freedom.
+
+# References
+
+::: {#refs}
+:::
+
+
+# Appendix
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: fig-PC12
+#| fig-cap: Variables Plot along PC1 and PC2 of PCA, 2008--2016
+
+PCA_plot_PC12
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: fig-PC13
+#| fig-cap: Variables Plot along PC1 and PC3 of PCA, 2008--2016
+
+PCA_plot_PC13
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: fig-scree
+#| fig-cap: Eigenvalues Histogram (Scree Plot) of PCA, 2008--2016
+
+fviz_eig(res, addlabels = TRUE) +
+  labs(x = "Principal Components",
+       y = "Percentage of Variance Explained")
+```
+
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: tbl-PCA
+#| tbl-cap: The First Four Principal Components of the Human Freedom Index, 2008--2016
+
+gt_table
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: tbl-PC2
+#| tbl-cap: Top and Bottom 10 Countries by PC2 Score, 2016
+
+  top_10 <- pc_scores |> 
+    arrange(desc(Dim.2)) |> 
+    slice_head(n = 10) |> 
+    mutate(Group = "Top 10")
+  
+  bottom_10 <- pc_scores |> 
+    arrange(Dim.2) |> 
+    slice_head(n = 10) |> 
+    mutate(Group = "Bottom 10")
+  
+  top_bottom_10 <- bind_rows(top_10, bottom_10)
+  
+  gt_tbl_scores <- top_bottom_10 |> 
+    select(Group, countries, Dim.2) |> 
+    gt(groupname_col = "Group")|> 
+    fmt_number(
+      columns = 3,
+      decimals = 3
+    ) |> 
+    cols_label(
+      Dim.2 = "PC2"
+    )
+
+gt_tbl_scores
+```
+
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+
+library(aweSOM) # (version 1.3) 
+
+## Import Data
+# setwd("/path/to/datafile/directory") ## Uncomment this line and set the path to the datafile's directory
+import.data <- data.table::fread("data_SOM.csv", stringsAsFactors = TRUE, data.table = FALSE, check.names = TRUE)
+
+## Build training data (numeric)
+train.data <- import.data[, c("pf_rol", "pf_ss", "pf_movement", "pf_religion", "pf_association", "pf_expression", "pf_identity", "ef_government", "ef_legal", "ef_money", "ef_trade", "ef_regulation")]
+### Scale training variables (unit variance)
+train.data <- scale(train.data)
+### Prepare plotting data
+plot.data <- import.data
+
+## Train SOM
+### RNG Seed (for reproducibility)
+set.seed(23968)
+### Initialization
+init <- somInit(train.data, ncols = 12, nrows = 4)
+### Training
+the.som <- kohonen::som(train.data, grid = kohonen::somgrid(12, 4, "hexagonal"), maxNA.fraction = 0.25, rlen = 100, alpha = c(0.05, 0.01), radius = c(5.29,-5.29), init = init, dist.fcts = "sumofsquares")
+
+## Quality measures
+# somQuality(the.som, train.data)
+
+
+## Group cells into superclasses (hierarchical clustering)
+superclust <- hclust(dist(the.som$codes[[1]]), "complete")
+superclasses <- cutree(superclust, 4)
+## Apply clusterings to observations
+obs.class <- the.som$unit.classif
+obs.superclass <- superclasses[obs.class]
+
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: fig-screeSOM
+#| fig-cap: SOM Superclass Scree plot, 2016
+aweSOMscreeplot(the.som, method = "hierarchical", hmethod = "complete", nclass = 4)
+```
+
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: tbl-Quality_SOM
+#| tbl-cap: SOM Quality Measures, 2016
+
+Quality_som <- somQuality(the.som, train.data)
+
+Quality_SOM <- list(
+  err.quant = Quality_som$err.quant,
+  err.varratio = Quality_som$err.varratio,
+  err.topo = Quality_som$err.topo,
+  err.kaski = Quality_som$err.kaski
+)
+
+
+quality_df <- data.frame(
+  Measure = c(
+    "Quantization Error",
+    "Explained Variance (%)",
+    "Topographic Error",
+    "Kaski-Lagus Error"
+  ),
+  Value = c(
+    Quality_som$err.quant,
+    Quality_som$err.varratio,
+    Quality_som$err.topo,
+    Quality_som$err.kaski
+  )
+)
+
+quality_table <- gt(quality_df) |> 
+  fmt_number(
+    columns = vars(Value),
+    decimals = 2
+  )
+
+quality_table
+
+```
+
+
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: fig-silhouette
+#| fig-cap: Silhouette of Cell Superclasses, 2016
+
+
+# This one doesn't work as R script in R studio.
+# aweSOMplot(som = the.som, type = "Hitmap", 
+#            superclass = superclasses, obsNames = plot.data[, "V1"], 
+#            size = 1000)
+
+aweSOMsilhouette(the.som, superclasses)
+
+
+# This one also doesn't work as R script in R studio.
+# aweSOMplot(som = the.som, type = "UMatrix", 
+#            superclass = superclasses, obsNames = plot.data[, "V1"], 
+#            legendFontsize = 34,
+#            size = 1000)
+
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: fig-SOM
+#| fig-cap: SOM Observation Cloud, 2016
+## Interactive plot
+aweSOMplot(som = the.som, type = "Cloud", data = plot.data, 
+           variables = c("None", "pf_rol", "pf_ss", "pf_movement", "pf_religion", "pf_association", "pf_expression", "pf_identity", "ef_government", "ef_legal", "ef_money", "ef_trade", "ef_regulation"),
+           superclass = superclasses, obsNames = plot.data[, "V1"], 
+           legendFontsize = 32,
+           size = 1000)
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: fig-histogram
+#| fig-cap: SOM Barplot of Numeric Variables, 2016
+## Interactive plot
+aweSOMplot(som = the.som, type = "Barplot", data = plot.data, 
+           variables = c("pf_rol", "pf_ss", "pf_movement", "pf_religion", "pf_association", "pf_expression", "pf_identity", "ef_government", "ef_legal", "ef_money", "ef_trade", "ef_regulation"),
+           superclass = superclasses, obsNames = plot.data[, "V1"], 
+           legendFontsize = 34,
+           size = 1000)
+
+```
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: fig-radar
+#| fig-cap: SOM Radar Chart of Numeric Variables, 2016
+## Interactive plot
+aweSOMplot(som = the.som, type = "Radar", data = plot.data, 
+           variables = c("pf_rol", "pf_ss", "pf_movement", "pf_religion", "pf_association", "pf_expression", "pf_identity", "ef_government", "ef_legal", "ef_money", "ef_trade", "ef_regulation"),
+           superclass = superclasses, obsNames = plot.data[, "V1"], 
+           legendFontsize = 34,
+           size = 1000)
+
+```
+

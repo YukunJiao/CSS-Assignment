@@ -1,0 +1,491 @@
+---
+title: "How Nations Are Free: Exploring the Link Between Economic and Personal Freedoms"
+author: "Yukun Jiao"
+date: last-modified
+date-format: "MMMM DD, YYYY"
+format: pdf
+header-includes:
+  - \usepackage{setspace}
+  - \onehalfspacing
+editor: source
+bibliography: references.bib
+---
+
+```{r}
+#| include: false
+library(tidyverse)
+library(mice)
+library(stringr)
+
+# PCA, MCA
+library(FactoMineR)
+library(explor)
+
+# Clustering
+library(cluster)
+library(NbClust)
+library(factoextra)
+library(ade4)
+
+# t-SNE, SOM
+library(Rtsne)
+library(aweSOM)
+library(Hmisc)
+library(ggplot2)
+```
+
+```{r}
+#| include: false
+HFI <- read.csv("HFI/hfi2008_2016.csv")
+
+supplementary_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 1)] |> c("ISO_code")
+
+rank_vars <- c("hf_rank", "hf_quartile", "ef_rank", "pf_rank")
+
+level1_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 2)] |> setdiff("ISO_code")
+
+sub_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 3)]
+
+ssub_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 4)]
+
+sssub_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 5)]
+```
+
+```{r}
+#| include: false
+########
+score_and_rank <- names(HFI)[grep("rank|score|quartile", names(HFI))]
+
+pf_vars <- names(HFI)[str_detect(names(HFI), "^pf_[^_]+$")] |> setdiff(score_and_rank)
+
+ef_vars <- names(HFI)[str_detect(names(HFI), "^ef_[^_]+$")] |> setdiff(score_and_rank)
+
+parent_vars <- sapply(str_split(sub_vars, "_"), function(parts) {
+  paste(parts[1:2], collapse = "_")
+})
+names(parent_vars) <- sub_vars
+
+mapping_df <- data.frame(
+  sub_vars = names(parent_vars),
+  parent_vars = parent_vars
+)
+
+selected_vars <- c(supplementary_vars, level1_vars, sub_vars)
+
+for (i in 1:2) {
+data <- 
+  HFI |> 
+  filter(!is.na(hf_score)) |> 
+  select(all_of(selected_vars)) |> 
+  mutate(across(all_of(pf_vars), ~ ifelse(is.na(.x), pf_score, .x))) |> 
+  mutate(across(all_of(ef_vars), ~ ifelse(is.na(.x), ef_score, .x))) |> 
+  mutate(across(all_of(mapping_df$sub_vars), ~ {
+    cur_var <- cur_column()
+    parent_var <- mapping_df$parent_vars[mapping_df$sub_vars == cur_var]
+    if(length(parent_var) == 1 && parent_var %in% names(data)) {
+    if_else(is.na(.x), data[[parent_var]], .x)
+    } else {
+      .x
+    }
+    }))
+}
+
+sum(is.na(data))
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+selected_vars <- c(supplementary_vars, level1_vars)
+
+data_PCA <- data |> 
+  filter(year == 2016) |> 
+  select(all_of(selected_vars)) |> 
+  select(-all_of(rank_vars))
+
+freedom_scores <- c("year", "pf_score", "ef_score", "hf_score")
+
+quanti_supp_score <- match(freedom_scores, colnames(data_PCA))
+
+res <- PCA(data_PCA, quanti.sup = quanti_supp_score, quali.sup = c(2, 3, 4), graph = FALSE)
+
+# explor(res)
+
+res_explor <- explor::prepare_results(res)
+PCA_plot_PC12 <- explor::PCA_var_plot(res_explor, xax = 1, yax = 2, var_sup = TRUE, var_sup_choice = c("pf_score",
+    "ef_score", "hf_score"), var_lab_min_contrib = 0, col_var = "Type", labels_size = 10,
+    scale_unit = TRUE, transitions = TRUE, labels_positions = NULL, xlim = c(-0.456,
+        1.23), ylim = c(-0.704, 0.984))
+
+PCA_plot_PC13 <- explor::PCA_var_plot(res_explor, xax = 1, yax = 3, var_sup = FALSE, var_sup_choice = ,
+    var_lab_min_contrib = 0, col_var = "Type", labels_size = 10, scale_unit = TRUE,
+    transitions = TRUE, labels_positions = NULL, xlim = c(-0.43, 1.08), ylim = c(-0.403,
+        1.1))
+
+# PCA_plot
+
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+library(gt)
+library(dplyr)
+Variable_freedom <- c("Rule of Law", "Security and Safety", "Movement", "Religion", "Association, Assembly, and Civil Society", "Expression and Information", "Identity and Relationships", "Size of Government", "Legal System and Property Rights", "Access to Sound Money", "Freedom to Trade Internationally", "Regulation of Credit, Labor, and Business")
+
+df_PCA <- as.data.frame(res$var$coord[, 1:4])
+df_PCA$Variable <- Variable_freedom
+
+df_PCA <- df_PCA |> 
+  select(Variable, everything())
+
+gt_table <- gt(df_PCA) %>%
+  tab_header(
+    title = "The First Four Principal Components of the Human Freedom Index, 2008--2016"
+  ) |> 
+  fmt_number(
+    columns = 2:5,
+    decimals = 3
+  ) %>%
+  cols_label(
+    Variable = "Variable",
+    Dim.1 = "PC1",
+    Dim.2 = "PC2",
+    Dim.3 = "PC3",
+    Dim.4 = "PC4"
+  )
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+pc_scores <- as.data.frame(res$ind$coord[, 1:4])
+
+pc_scores$countries <- data_PCA$countries
+pc_scores <- pc_scores |> 
+  select(countries, everything())
+
+
+
+tbl_score <- function(dim) {
+  top_10 <- pc_scores |> 
+    arrange(desc({{dim}})) |> 
+    slice_head(n = 10) |> 
+    mutate(Group = "Top 10")
+  
+  bottom_10 <- pc_scores |> 
+    arrange({{dim}}) |> 
+    slice_head(n = 10) |> 
+    mutate(Group = "Bottom 10")
+  
+  top_bottom_10 <- bind_rows(top_10, bottom_10)
+  
+  gt_tbl_scores <- top_bottom_10 |> 
+    select(Group, countries, Dim.1, Dim.2, Dim.3, Dim.4) |> 
+    gt(groupname_col = "Group")|> 
+    fmt_number(
+      columns = 2:5,
+      decimals = 3
+    ) |> 
+    cols_label(
+      Dim.1 = "PC1",
+      Dim.2 = "PC2",
+      Dim.3 = "PC3",
+      Dim.4 = "PC4"
+    )
+return(gt_tbl_scores)
+}
+
+```
+
+## Abstract
+
+This study applies PCA and SOM to investigate the underlying factors that enable certain countries to advance economic freedom despite limited personal freedom.
+
+Based on data from the Human Freedom Index (HFI), the results of PCA indicate that the first principal component represents the rule of law, assigning significant weights to variables of both personal freedom and economic freedom; the second principal component represents social oppression; and the third principal component corresponds to one-party authoritarian states. Furthermore, the findings suggest that in countries with high levels of economic freedom, the absence of personal freedom may even contribute to enhancing economic freedom. The results of the SOM suggest that China and a series of neighboring countries exhibit a pattern of economic freedom combined with political repression.
+
+Based on data from the Human Freedom Index (HFI), the results of PCA indicate that the rule of law is a key factor in personal and economic freedom, while personal freedom does not necessarily lead to economic freedom. Furthermore, the findings suggest that in countries with high levels of economic freedom, the absence of personal freedom may even contribute to enhancing economic freedom.
+
+Overall, the analysis suggests that the connection between personal freedom and economic freedom lies in the rule of law, and that democracy is not a necessary condition for economic freedom.
+
+## Introduction
+
+Friedman points out that there is an intimate connection between economics and politics, and only certain combinations of political and economic arrangements are possible. In particular, a society that is socialist cannot also be democratic in the sense of guaranteeing individual freedom. Economic arrangements play a dual role in promoting a free society: economic freedom is both a component of freedom broadly understood as an end in itself and an indispensable means toward achieving political freedom.
+
+Building upon the understanding of economic and political freedom, it is important to examine the role of the free market and government in sustaining these freedoms. Friedman argued that the role of competitive capitalism the organization of the bulk of economic activity through private enterprise operating in a free market as a system of economic freedom and a necessary condition for political freedom. The competitive capitalism plays a crucial role in limiting the concentration of power by separating economic power from political power. Even in societies where political freedom is lacking, such as Fascist regimes or tsarist Russia, the presence of competitive capitalism and private property provided a check on centralized state power, allowing citizens more freedom than those in totalitarian states where economic and political totalitarianism are combined. Thus, a free market can help constrain government authority and preserve some degree of individual freedom even when political institutions are not fully free [@friedman1982]. In other words, economic freedom can greatly reduce the range of issues that must be decided through political means, thereby minimizing direct government involvement and maximizing personal freedom.
+
+Structural characteristics such as low national income, proximity to the equator, high ethnolinguistic diversity, French or socialist legal origins, and a high proportion of Catholics or Muslims have been found to correlate with inferior government performance [@lopez-de-silanes1999]. Although these factors are associated with lower government performance rather than freedom directly, ineffective governance often limits the protection of rights, the enforcement of contracts, and the overall rule of law—all of which are essential for both personal and economic freedom. In fact, a well-functioning government can support freedom. The generally positive or neutral relationship between government activity and economic freedom suggests that there is no inherent contradiction between the two. Moreover, free markets depend on institutional quality and credible oversight—functions that governments are well-positioned to provide [@ott2018].
+
+Institutional frameworks, especially the rule of law, play a fundamental role in supporting both economic growth and freedom. Over the past decades, scholars have recognized the crucial role of the rule of law in promoting economic growth. By constraining arbitrary governmental actions, the rule of law creates micro-level incentives and provides an institutional framework conducive to investment, entrepreneurship, and long-term capital development. Empirical evidence robustly shows that stability in legal rules, secure property rights, and restraint on arbitrary government actions significantly encourage economic growth. The varying economic outcomes among countries are largely explained by differences in institutional quality, with the rule of law being a key distinguishing factor. In contrast, democratic elections appear far less important for economic growth, as democracy does not necessarily generate the institutions needed for sustained growth and may instead foster redistributive and special interest politics that hinder it. This explains why countries such as Chile, Singapore, and Hong Kong have experienced rapid economic growth despite lacking democratic politics; strong rule of law values in these countries provided an environment conducive to economic prosperity [@zywicki2003].
+
+Building on the theoretical foundations of economic and personal freedom, and recognizing the critical role of institutional quality in supporting these freedoms, it becomes essential to develop rigorous empirical methods to measure and analyze the complex dimensions of human freedom. Among various metrics, the widely cited Human Freedom Index (HFI) provides a comprehensive framework for assessing freedom, yet its constituent dimensions remain insufficiently examined. Prior studies have applied principal component analysis, k-means clustering, and factor analysis to understand the structure of HFI, yet these explorations remain limited [@murphy2025]. Building upon this gap, our study contributes by employing principal component analysis (PCA) alongside self-organizing maps (SOM) to offer the investigation of the potential patterns within the HFI. This approach not only supplements existing methodologies but also provides fresh insights into the complex multidimensionality of human freedom that traditional clustering techniques might overlook.
+
+Based on previous review, this study focuses on the following exploratory questions:
+
+RQ1: What factors allow certain countries to advance economic freedom despite limited personal freedom?
+
+RQ2: In the long run, what factors could enable these countries to transition into states with high levels of personal freedom (rule of law and specific personal freedom)?
+
+## Data
+
+The Human Freedom Index (HFI) presents a broad measure of human freedom, understood as the absence of coercive constraint [@ian2018]. The index is constructed using 79 distinct indicators that capture both personal and economic dimensions of freedom. These indicators span a wide range of 12 areas, including the rule of law, security and safety, freedom of movement, religion, association, assembly, and civil society, as well as freedom of expression and information, identity and relationships, the size of government, the legal system and property rights, access to sound money, freedom to trade internationally, and the regulation of credit, labor, and business.
+
+The HFI is one of the most comprehensive freedom indices constructed for a globally representative set of countries and jurisdictions. The 2018 edition of the index covers 162 jurisdictions and provides annual data from 2008 to 2016. This study uses the 2018 edition as its data source, with freedom measured on a scale of 0 to 10, where 10 represents more freedom.
+
+## Methods
+
+Method Principle of the method interpretability of the method Applicable conditions and limitations of the method Evaluation of the results/
+
+This study used two methods, PCA and SOM to explore HFI.
+
+The first method is PCA.
+
+Principal component analysis reduces the dimensions of a set of indicators, with each principal component preserving as much variation as possible, with the variation explained declining in order of the components. The resulting components are, by construction, orthogonal to one another. Reported with each component are associated eigenvalues which represent how much variance each component is capturing, the difference between the eigenvalue of the principal component and that of the one that follows, and the proportion of the total variance that each component is capturing.
+
+the principal component loading vectors as the directions in feature space along which the data vary the most,
+
+and the principal component scores as projections along these directions
+
+主成分和主成分得分完了后 我们感兴趣的是 the proportion of variance explained (PVE) by each proportion of variance explained principal component
+
+其次，我们感兴趣的是Deciding How Many Principal Components to Use
+The second method is SOM. 这个问题没有可行的标准。常见的做法是找到elbow拐点。实际上，可以查看前几个主成分以找到有趣的模式，继续查看后续的主成分，直到找不到有趣的模式。在本研究中，前三个主成分是有趣的，第四个主成分解释方差较低，且观察不到有趣的模式。
+
+When faced with a large set of correlated variables, principal components allow us to summarize this set with a smaller number of representative variables that collectively explain most of the variability in the original set. The principal component directions are presented in Section 6.3.1 as directions in feature space along which the original data are highly variable. These directions also define lines and subspaces that are as close as possible to the data cloud.
+
+对于给定的n个观测值和一组p个特征值X1, X2, ..., Xp,我们可以用数据的二维散点图来可视化数据进行观察，但显然，这样的图有很多，尤其当p很大时。因此我们希望找到一种低维的数据表示，以尽可能多的捕获信息，进而在低维空间中绘制观测值。
+
+
+
+
+
+
+
+
+
+PCA就是这样一种经典的降维方法，旨在从一组数据中，找到正交的主方向，也就是主成分，每个主成分尽可能多地保留变异，且各主成分依次解释的变异逐渐减少。通过丢弃次要成分，PCA可以有效减少数据变量，并将主要变量显示在线性低维空间中。
+
+具体来说，对于给定的n个观测值和一组p个特征值X1, X2, ..., Xp,我们可以用数据的二维散点图来可视化数据进行观察，但显然，这样的图有很多，尤其当p很大时。因此我们希望找到一种低维的数据表示，以尽可能多的捕获信息，在低维空间中绘制观测值。
+
+解释： 第一个主成分，代表了特征空间中数据变化最大的方向
+
+the principal component loading vectors as the directions in feature space along which the data vary the most,
+
+and the principal component scores as projections along these directions
+
+主成分和主成分得分完了后 我们感兴趣的是 the proportion of variance explained (PVE) by each proportion of variance explained principal component
+
+Deciding How Many Principal Components to Use
+
+:   
+
+方法适用条件和局限： PCA可能用于把经济自由的各个数据直接聚合成一个新的经济自由评分。也就是提取出经济自由数据的主要成分，得到一个综合评分。然而这种做法存在问题，问题是 PCA对子成分的权重是根据该方向上数据方差最大来确定的，并不一定反映这些子成分的实际影响。此外，PCA中有些主成分会给变量分配负值，而权重为负，会使得解释变得复杂，因为负值意味着某些指标在主成分中的影响方向相反，尽管这种情况在本研究中并不存在。
+
+评价方法对应结果的好坏/可解释性 contribution cos\^2
+
+SOM
+
+There is an empirical formula to estimate the required number of network nodes: $5\sqrt{M}$, where M is the number of observations.
+
+2 operations at once – Dimensionality reduction: projection of a large dimensional cloud onto a smaller plan – Clustering: Sorting the individuals into consistent groups
+
+SOM的基本思想是capture the data in the net
+
+Number of cells determined ex ante, but the size of each cell is not fixed
+
+判断好坏的标准是 Quantization error: Average distance between the data points and the map nodes to which they are mapped (= small is better)
+
+Two layers are normally considered in SOM network including the input layer and the competition layer. +e first aims to simulate the process of sensing the input information. +e second aims to simulate the response behavior of the cerebral cortex. +e impact of the winning neuron of the SOM network on its adjacent neurons depends mainly on the distance. Therefore, in the learning process, not only the winning neuron itself should adjust the weight vector, but also the surrounding neurons should follow the same manner to varying intensities under its impact.
+
+\newpage
+
+## Results
+
+In the HFI data, the first principal component explains 49.4% of the variance in the data, the second principal component explains 15.5% of the variance in the data, and the third principal component explains 9.9% of the variance. Together, the first two principal components explain almost 74.7 % of the variance in the data, and the last principal components explain only 25.3 % of the variance. And The fourth principal components does not show interesting pattern.
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: tbl-PCA
+#| tbl-cap: PCA
+gt_table
+
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: tbl-PC2
+#| tbl-cap: Top and Bottom 10 Countries by PC2 Score (Human Freedom Index)
+
+
+  top_10 <- pc_scores |> 
+    arrange(desc(Dim.2)) |> 
+    slice_head(n = 10) |> 
+    mutate(Group = "Top 10")
+  
+  bottom_10 <- pc_scores |> 
+    arrange(Dim.2) |> 
+    slice_head(n = 10) |> 
+    mutate(Group = "Bottom 10")
+  
+  top_bottom_10 <- bind_rows(top_10, bottom_10)
+  
+  gt_tbl_scores <- top_bottom_10 |> 
+    select(Group, countries, Dim.2) |> 
+    gt(groupname_col = "Group")|> 
+    fmt_number(
+      columns = 2,
+      decimals = 3
+    ) |> 
+    cols_label(
+      Dim.2 = "PC2"
+    )
+
+gt_tbl_scores
+```
+
+
+
+
+Three principal components were retained in PCA for the analysis across countries. Together these first three principal components accounted for 53.41%. The 4th principal component captured only an additional 4.9% of the total data variability and the factor loading was dominated .
+
+PC1: Rule of law and personal freedom/civil liberties (The rule of law is the basement of personal freedom.) 34.74%
+
+PC2: economic freedom 13.44%
+
+PC3: Government intervention and individual security
+
+OR
+
+PC3: a spectrum of political governance styles in countries: - strongman regimes or one-party authoritarian states -- Kazakhstan, China, Russia
+
+-   low-quality, flawed democracies (military juntas or electoral authoritarian states) -- a lot of African countries
+
+-   in the middle -- partially democratic or fully democratic states
+
+从结果中，我们可以发现，越靠近PC1上得分越高的国家，越会向着PC2靠近，这说明个人自由和经济自由存在相关性。通过多个反例，我们可以知道这种相关是一种因果关系，个人自由（尤其是其中的法治）越高，则经济自由越高。
+
+SOM
+
+基于PCA和SOM的结果发现，以下假设被提出以供未来检验：
+
+H1:
+
+H1: The rule of law is the most influential factor affecting freedom.
+
+法治是经济自由的保障。经济自由在产生政治自由的过程中，需要法治。良好的法治可以确保政府维持经济活动，保障经济自由。
+
+法治也是个人自由的基础。法治意味着限制政府的任意行为，从而保障个人权利不被公权力侵犯。同时，通过法律规范，防止个人权利受到其他私人的侵害。
+
+H2: 公民自由(具体的个人自由) are not a necessary condition for economic 在推动经济增长方面，民主选举的重要性远远低于法治本身。事实上，民主可能倾向于再分配型政治和特殊利益集团的博弈，而这些往往会抑制经济增长。
+
+H3: 经济自由，伴随着市场经济活动，会分散政府权力，削弱政府的集权，使得经济权利和政治权力相互制衡。
+
+H4: 缺失特定的具体个人自由，反而有助于经济自由。尽管这在长期来看会制造更大的社会矛盾 (站在资本家和政府的角度来考虑，比如强拆，比如镇压罢工和劳资矛盾。或者说，避免政权更迭，本身就是有助于经济稳定和经济自由的。)。
+
+H5: 中国的党国法治和沙特伊朗等神权国家和卡塔尔这样的绝对君主制法治，其实是一种特殊法治状态，而不是法治例外国家。尽管他们不符合西方的法治标准，但理论上符合他们自身的相对较低的法治标准---尽管按照他们自身的法治标准，其实还仍然保留着很多对人们的不必要限制。
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: fig-SOM
+#| fig-cap: SOM
+library(aweSOM) # (version 1.3) 
+
+## Import Data
+# setwd("/path/to/datafile/directory") ## Uncomment this line and set the path to the datafile's directory
+import.data <- data.table::fread("data_SOM.csv", stringsAsFactors = TRUE, data.table = FALSE, check.names = TRUE)
+
+## Build training data (numeric)
+train.data <- import.data[, c("pf_rol", "pf_ss", "pf_movement", "pf_religion", "pf_association", "pf_expression", "pf_identity", "ef_government", "ef_legal", "ef_money", "ef_trade", "ef_regulation")]
+### Scale training variables (unit variance)
+train.data <- scale(train.data)
+### Prepare plotting data
+plot.data <- import.data
+
+## Train SOM
+### RNG Seed (for reproducibility)
+set.seed(20199)
+### Initialization
+init <- somInit(train.data, ncols = 8, nrows = 8)
+### Training
+the.som <- kohonen::som(train.data, grid = kohonen::somgrid(8, 8, "hexagonal"), maxNA.fraction = 0.25, rlen = 100, alpha = c(0.05, 0.01), radius = c(4.58,-4.58), init = init, dist.fcts = "sumofsquares")
+
+## Quality measures
+# somQuality(the.som, train.data)
+
+## Group cells into superclasses (hierarchical clustering)
+superclust <- hclust(dist(the.som$codes[[1]]), "complete")
+superclasses <- cutree(superclust, 2)
+## Apply clusterings to observations
+obs.class <- the.som$unit.classif
+obs.superclass <- superclasses[obs.class]
+
+## Interactive plot
+aweSOMplot(som = the.som, type = "Cloud", data = plot.data, 
+           variables = c("None", "pf_rol", "pf_ss", "pf_movement", "pf_religion", "pf_association", "pf_expression", "pf_identity", "ef_government", "ef_legal", "ef_money", "ef_trade", "ef_regulation"),
+           superclass = superclasses, obsNames = plot.data[, "V1"], 
+           size = 400)
+```
+
+\newpage
+
+## Conclusion
+
+In the future,this study will further explore the distinguishing characteristics of countries where economic liberalization leads to political liberalization, as opposed to those where such a transition does not occur. \## References
+
+## Reference
+
+5 papers
+
+Capitalism and Freedom
+
+The Rule of Law, Freedom and Prosperity - 1 2 4
+
+The Effect of Personal and Economic Freedom on Entrepreneurial Activity: Evidence from a New State Level Freedom Index
+
+Social Repression and Variation within the Human Freedom Index
+
+# Appendix {.appendix}
+
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: fig-PC12
+#| fig-cap: PCA PC1 PC2
+
+PCA_plot_PC12
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: fig-PC13
+#| fig-cap: PCA PC1 PC3
+
+PCA_plot_PC13
+```
+
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+#| label: fig-scree
+#| fig-cap: scree plot
+
+fviz_eig(res, addlabels = TRUE) +
+  labs(title = "Eigenvalues Histogram (Scree Plot)",
+       x = "Principal Components",
+       y = "Percentage of Variance Explained")
+```

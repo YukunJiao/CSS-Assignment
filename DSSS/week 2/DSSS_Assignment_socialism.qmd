@@ -1,0 +1,221 @@
+---
+title: "DSSS_Assignment_2"
+author: "Yukun Jiao"
+date: last-modified
+date-format: "MMMM DD, YYYY"
+format: html
+editor: source
+---
+```{r}
+#| include: false
+library(tidyverse)
+library(mice)
+library(stringr)
+
+# PCA, MCA
+library(FactoMineR)
+library(explor)
+
+# Clustering
+library(cluster)
+library(NbClust)
+library(factoextra)
+library(ade4)
+
+# t-SNE, SOM
+library(Rtsne)
+library(aweSOM)
+library(Hmisc)
+library(ggplot2)
+```
+
+## Processing data
+
+For HFI in 2016, there is 10 regions and 162 countries.
+```{r}
+HFI <- read.csv("HFI/hfi2008_2016.csv")
+
+supplementary_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 1)] |> c("ISO_code")
+
+rank_vars <- c("hf_rank", "hf_quartile", "ef_rank", "pf_rank")
+
+level1_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 2)] |> setdiff("ISO_code")
+
+sub_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 3)]
+
+ssub_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 4)]
+
+sssub_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 5)]
+
+# HFI$countries[is.na(HFI$hf_score)] |> table()
+```
+
+```{r}
+########
+score_and_rank <- names(HFI)[grep("rank|score|quartile", names(HFI))]
+
+pf_vars <- names(HFI)[str_detect(names(HFI), "^pf_[^_]+$")] |> setdiff(score_and_rank)
+
+ef_vars <- names(HFI)[str_detect(names(HFI), "^ef_[^_]+$")] |> setdiff(score_and_rank)
+
+parent_vars <- sapply(str_split(sub_vars, "_"), function(parts) {
+  paste(parts[1:2], collapse = "_")
+})
+names(parent_vars) <- sub_vars
+
+mapping_df <- data.frame(
+  sub_vars = names(parent_vars),
+  parent_vars = parent_vars
+)
+
+selected_vars <- c(supplementary_vars, level1_vars, sub_vars)
+
+for (i in 1:2) {
+data <- 
+  HFI |> 
+  filter(!is.na(hf_score)) |> 
+  select(all_of(selected_vars)) |> 
+  mutate(across(all_of(pf_vars), ~ ifelse(is.na(.x), pf_score, .x))) |> 
+  mutate(across(all_of(ef_vars), ~ ifelse(is.na(.x), ef_score, .x))) |> 
+  mutate(across(all_of(mapping_df$sub_vars), ~ {
+    cur_var <- cur_column()
+    parent_var <- mapping_df$parent_vars[mapping_df$sub_vars == cur_var]
+    if(length(parent_var) == 1 && parent_var %in% names(data)) {
+    if_else(is.na(.x), data[[parent_var]], .x)
+    } else {
+      .x
+    }
+    }))
+}
+
+sum(is.na(data))
+```
+
+```{r}
+###
+selected_vars <- c(supplementary_vars, level1_vars)
+data_1 <- data |> 
+  select(all_of(selected_vars))
+
+###
+
+###
+# selected_vars <- c(supplementary_vars, level1_vars, sub_vars)
+# data_level2 <- data |> 
+#   select(all_of(selected_vars))
+
+###
+
+# dim(data)
+# collapse::descr(data)
+# summary(data)
+# 
+# dim(data_1)
+# collapse::descr(data_1)
+# summary(data_1)
+```
+
+## PCA
+```{r}
+data_PCA <- data |> 
+  select(-all_of(score_and_rank))
+
+# num <- sapply(data_PCA, is.numeric)
+res <- PCA(data_PCA, quanti.sup = c(1), quali.sup = c(2, 3, 4), graph = FALSE)
+explor(res)
+
+data_PCA[282, "countries"]
+data_PCA[629, "countries"]
+data_PCA[1049, "countries"]
+data_PCA[849, "countries"]
+data_PCA[33,]
+```
+
+The first loading vector places approximately equal weight on pf_rol, ef_legal, pf_expression, ef_trade, pf_association. Hence this component roughly corresponds to a measure of 法治与特定的公民自由，反映出一个国家的司法质量、法律保障和表达和结社的自由。
+
+等等 那PC1表示的不就是一个国家是否具有民主制度的基础支柱--法治和个人自由吗？一个国家 既有制度保障 又有必要的个人自由 这不就是意味着民主的基础 通俗来讲 民主就是法治和个人自由的复合维度 （尽管经济自由在这里没有体现）总之就是不考虑经济自由
+
+```{r}
+data_PCA_1 <- data_1 |> 
+  select(-all_of(score_and_rank))
+
+# num <- sapply(data_PCA, is.numeric)
+res_1 <- PCA(data_PCA_1, quanti.sup = c(1), quali.sup = c(2, 3, 4), graph = FALSE)
+explor(res_1)
+test <- data |> select(countries, pf_score, ef_score, pf_ss)
+
+```
+从更少的数据 我们可以发现 PC1主要反映国家对个人自由（尤其是结社自由 表达自由 迁徙自由，对宗教自由和性别平等的权重并不大）与法治环境的整体支持程度，同时我的PC1另一侧是政府规模（政府对经济的干预力度），这暗示了大政府可能对个人自由和法治环境构成一定的侵蚀。
+
+PC2基本呈现了personal freedom在一侧 economic freedom在另一侧的情况，反映出了对个人自由和经济自由的衡量。比如委内瑞拉在极端一侧，沙特阿拉伯在极端另一侧，新加坡也在这一侧。表明了国家对经济自由和个人自由的取舍。委内瑞拉几乎没有经济自由，存在有限的个人自由，所以被拉到极端的没有经济自由一侧；沙特阿拉伯经济自由尚可，但是个人自由非常受限，所以拉到了有经济自由的一侧。总而言之，反映了国家内是要经济自由不要个人自由还是要个人自由不要经济自由的取舍
+
+
+根据变量的分布，PC3衡量了政府干预和个体安全（法律上的不安全就是法治不行，非法律上的不安全就是人身不安全）。根据国家数据的分布，PC3衡量的是国家政治治理风格是强人政治/一党制威权（哈萨克斯坦 中国 俄罗斯）+个人安全，还是低质量缺陷民主的威权国家（一堆非洲国家，披了个民主外衣，基本上就是威权体制，但不是强人政治，是军政府或者选举威权）+没有个人安全。中间的平衡位置，基本上就是部分民主国家或者完全民主国家。
+
+我重新看了下数据 发现这些非洲国家个人安全得分还蛮高的 有的都比中国高 所以我根据变量的预测应该是不对的 更像是通过国家数据的分布来进行解释，解释里会更强。
+
+
+
+## Clustering
+
+```{r, fig.width=8, fig.height=6}
+set.seed(2077)
+
+supplementary_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 1)] |> c("ISO_code")
+
+dat <- data |> 
+  select(-all_of(score_and_rank)) |> 
+  select(-all_of(supplementary_vars))
+
+metadat <- data |> 
+  select(all_of(supplementary_vars))
+
+
+d <- dist(dat, method = "euclidean")
+hc.res <- hclust(d = d, method = "ward.D2")
+
+{plot(hc.res, cex = 0.5, hang = -1)
+rect.hclust(hc.res, k = 2, border = 1:20)
+}
+fviz_nbclust(dat, hcut, hc_method = "ward.D2", method = c("silhouette"))
+
+nb <- cutree(hc.res, 2)
+fviz_cluster(list(data = dat, cluster = nb),
+             ellipse = TRUE, geom = "point",
+             main = "Cluster plot (Ward.D2 + Euclidean)")
+
+
+
+```
+
+```{r}
+set.seed(2077)
+
+supplementary_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 1)] |> c("ISO_code")
+
+dat <- data |> 
+  select(-all_of(score_and_rank)) |> 
+  select(-all_of(supplementary_vars))
+
+metadat <- data |> 
+  select(all_of(supplementary_vars))
+
+newDatCluster <- res$ind$coord[, 1:2]
+
+hc <- dist(newDatCluster, method = "euclidean") #Distance
+res.hc <- hclust(hc, method = "ward.D2") #Linkage
+{plot(res.hc, cex = 0.5, hang = -1)
+rect.hclust(res.hc, k = 2, border = 2:7)}
+fviz_nbclust(dat, hcut, hc_method = "ward.D2", method = c("silhouette"))
+
+cluster <- cutree(res.hc, 2)
+plot(newDatCluster[, 1:2])
+plot(newDatCluster[, 1:2], col = cluster)
+
+```
+
+## t-SNE
+```{r}
+
+```
+

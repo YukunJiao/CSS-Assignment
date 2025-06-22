@@ -1,0 +1,499 @@
+---
+title: "DSSS_Assignment_2"
+author: "Yukun Jiao"
+date: last-modified
+date-format: "MMMM DD, YYYY"
+format: html
+editor: source
+---
+
+```{r}
+#| include: false
+library(tidyverse)
+library(mice)
+library(stringr)
+
+# PCA, MCA
+library(FactoMineR)
+library(explor)
+
+# Clustering
+library(cluster)
+library(NbClust)
+library(factoextra)
+library(ade4)
+
+# t-SNE, SOM
+library(Rtsne)
+library(aweSOM)
+library(Hmisc)
+library(ggplot2)
+```
+
+## Processing data
+
+For HFI in 2016, there is 10 regions and 162 countries.
+```{r}
+HFI <- read.csv("HFI/hfi2008_2016.csv")
+
+supplementary_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 1)] |> c("ISO_code")
+
+rank_vars <- c("hf_rank", "hf_quartile", "ef_rank", "pf_rank")
+
+level1_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 2)] |> setdiff("ISO_code")
+
+sub_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 3)]
+
+ssub_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 4)]
+
+sssub_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 5)]
+
+# HFI$countries[is.na(HFI$hf_score)] |> table()
+```
+
+```{r}
+########
+score_and_rank <- names(HFI)[grep("rank|score|quartile", names(HFI))]
+
+pf_vars <- names(HFI)[str_detect(names(HFI), "^pf_[^_]+$")] |> setdiff(score_and_rank)
+
+ef_vars <- names(HFI)[str_detect(names(HFI), "^ef_[^_]+$")] |> setdiff(score_and_rank)
+
+parent_vars <- sapply(str_split(sub_vars, "_"), function(parts) {
+  paste(parts[1:2], collapse = "_")
+})
+names(parent_vars) <- sub_vars
+
+mapping_df <- data.frame(
+  sub_vars = names(parent_vars),
+  parent_vars = parent_vars
+)
+
+selected_vars <- c(supplementary_vars, level1_vars, sub_vars)
+
+for (i in 1:2) {
+data <- 
+  HFI |> 
+  filter(!is.na(hf_score)) |> 
+  select(all_of(selected_vars)) |> 
+  mutate(across(all_of(pf_vars), ~ ifelse(is.na(.x), pf_score, .x))) |> 
+  mutate(across(all_of(ef_vars), ~ ifelse(is.na(.x), ef_score, .x))) |> 
+  mutate(across(all_of(mapping_df$sub_vars), ~ {
+    cur_var <- cur_column()
+    parent_var <- mapping_df$parent_vars[mapping_df$sub_vars == cur_var]
+    if(length(parent_var) == 1 && parent_var %in% names(data)) {
+    if_else(is.na(.x), data[[parent_var]], .x)
+    } else {
+      .x
+    }
+    }))
+}
+
+sum(is.na(data))
+```
+
+```{r}
+###
+selected_vars <- c(supplementary_vars, level1_vars)
+data_1 <- data |> 
+  select(all_of(selected_vars))
+
+###
+
+###
+# selected_vars <- c(supplementary_vars, level1_vars, sub_vars)
+# data_level2 <- data |> 
+#   select(all_of(selected_vars))
+
+###
+
+# dim(data)
+# collapse::descr(data)
+# summary(data)
+# 
+# dim(data_1)
+# collapse::descr(data_1)
+# summary(data_1)
+```
+
+## PCA
+```{r}
+data_PCA <- data |> 
+  filter(year == 2016) |> 
+  filter(pf_ss > 6)
+
+
+freedom_scores <- c("pf_score", "ef_score", "hf_score")
+quanti_supp_score <- match(freedom_scores, colnames(data_PCA))
+
+# data_PCA <- data |> 
+#   filter(year == 2016) |> 
+#   filter(pf_ss > 6) |> 
+#   select(-all_of(score_and_rank))
+
+
+c(1, quanti_supp_score)
+# num <- sapply(data_PCA, is.numeric)
+res <- PCA(data_PCA, quanti.sup = c(1, quanti_supp_score), quali.sup = c(2, 3, 4), graph = FALSE)
+explor(res)
+
+res <- explor::prepare_results(res)
+
+explor::PCA_var_plot(res, xax = 1, yax = 2, var_sup = TRUE, var_sup_choice = "countries",
+    var_lab_min_contrib = 0, col_var = "Type", labels_size = 10, scale_unit = TRUE,
+    transitions = TRUE, labels_positions = NULL, xlim = c(-14.9, 12.8), ylim = c(-15.1,
+        12.7))
+
+explor::PCA_ind_plot(res, xax = 1, yax = 2, ind_sup = FALSE, lab_var = NULL,
+    ind_lab_min_contrib = 0, col_var = "region", labels_size = 9, point_opacity = 0.5,
+    opacity_var = NULL, point_size = 64, ellipses = FALSE, transitions = TRUE,
+    labels_positions = NULL, xlim = c(-14.9, 12.8), ylim = c(-15.1, 12.7))
+
+
+sum(data$countries =='Taiwan')
+
+data |> 
+  filter(year == 2016) |> 
+  filter(countries %in% c("Qatar", "Oman", "Saudi Arabia", "United Arab Emirates", "Brunei Darussalam", "Swaziland", "China", "Singapore", "Belarus", "Tajikistan")) |> 
+  select(countries, pf_score, ef_score, hf_score) |> 
+  arrange(desc(ef_score))
+```
+
+The first loading vector places approximately equal weight on pf_rol, ef_legal, pf_expression, ef_trade, pf_association. Hence this component roughly corresponds to a measure of 法治与特定的公民自由，反映出一个国家的司法质量、法律保障和表达和结社的自由。
+
+等等 那PC1表示的不就是一个国家是否具有民主制度的基础支柱--法治和个人自由吗？一个国家 既有制度保障 又有必要的个人自由 这不就是意味着民主的基础 通俗来讲 民主就是法治和个人自由的复合维度 （尽管经济自由在这里没有体现）总之就是不考虑经济自由
+
+```{r}
+data_PCA_1 <- data_1 |> 
+  select(-all_of(score_and_rank))
+
+# num <- sapply(data_PCA, is.numeric)
+res_1 <- PCA(data_PCA_1, quanti.sup = c(1), quali.sup = c(2, 3, 4), graph = FALSE)
+explor(res_1)
+test <- data |> 
+  filter(year == 2016) |> 
+  select(countries, pf_score, ef_score, pf_ss, ef_government)
+
+```
+从更少的数据 我们可以发现 PC1主要反映国家对个人自由（尤其是结社自由 表达自由 迁徙自由，对宗教自由和性别平等的权重并不大）与法治环境的整体支持程度，同时我的PC1另一侧是政府规模（政府对经济的干预力度），这暗示了大政府可能对个人自由和法治环境构成一定的侵蚀。
+
+PC2基本呈现了personal freedom在一侧 economic freedom在另一侧的情况，反映出了对个人自由和经济自由的衡量。比如委内瑞拉在极端一侧，沙特阿拉伯在极端另一侧，新加坡也在这一侧。表明了国家对经济自由和个人自由的取舍。委内瑞拉几乎没有经济自由，存在有限的个人自由，所以被拉到极端的没有经济自由一侧；沙特阿拉伯经济自由尚可，但是个人自由非常受限，所以拉到了有经济自由的一侧。总而言之，反映了国家内是要经济自由不要个人自由还是要个人自由不要经济自由的取舍
+
+
+根据变量的分布，PC3衡量了政府干预和个体安全（法律上的不安全就是法治不行，非法律上的不安全就是人身不安全）。根据国家数据的分布，PC3衡量的是国家政治治理风格是强人政治/一党制威权（哈萨克斯坦 中国 俄罗斯）+个人安全，还是低质量缺陷民主的威权国家（一堆非洲国家，披了个民主外衣，基本上就是威权体制，但不是强人政治，是军政府或者选举威权）+没有个人安全。中间的平衡位置，基本上就是部分民主国家或者完全民主国家。
+
+我重新看了下数据 发现这些非洲国家个人安全得分还蛮高的 有的都比中国高 所以我根据变量的预测应该是不对的 更像是通过国家数据的分布来进行解释，解释里会更强。
+
+
+```{r}
+library(gt)
+library(dplyr)
+Variable_freedom <- c("Rule of Law", "Security and Safety", "Movement", "Religion", "Association, Assembly, and Civil Society", "Expression and Information", "Identity and Relationships", "Size of Government", "Legal System and Property Rights", "Access to Sound Money", "Freedom to Trade Internationally", "Regulation of Credit, Labor, and Business")
+
+df_PCA <- as.data.frame(res_1$var$coord[, 1:4])
+df_PCA$Variable <- Variable_freedom
+
+df_PCA <- df_PCA |> 
+  select(Variable, everything())
+
+gt_table <- gt(df_PCA) %>%
+  tab_header(
+    title = "The First Four Principal Components of the Human Freedom Index, 2008--2016"
+  ) |> 
+  fmt_number(
+    columns = 2:5,   # 这里是四个主成分列
+    decimals = 3
+  ) %>%
+  cols_label(
+    Variable = "Variable",
+    Dim.1 = "PC1",
+    Dim.2 = "PC2",
+    Dim.3 = "PC3",
+    Dim.4 = "PC4"
+  )
+gt_table
+
+```
+
+
+
+## Clustering
+
+```{r, fig.width=8, fig.height=6}
+set.seed(2077)
+
+supplementary_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 1)] |> c("ISO_code")
+
+dat <- data |> 
+  select(-all_of(score_and_rank)) |> 
+  select(-all_of(supplementary_vars))
+
+metadat <- data |> 
+  select(all_of(supplementary_vars))
+
+# rownames(dat) <- metadat$countries
+
+d <- dist(dat, method = "euclidean")
+hc.res <- hclust(d = d, method = "ward.D2")
+
+{plot(hc.res, cex = 0.5, hang = -1)
+rect.hclust(hc.res, k = 7, border = 1:20)
+}
+fviz_nbclust(dat, hcut, hc_method = "ward.D2", method = c("silhouette"))
+
+nb <- cutree(hc.res, 7)
+fviz_cluster(list(data = dat, cluster = nb),
+             ellipse = TRUE, geom = "point",
+             main = "Cluster plot (Ward.D2 + Euclidean)")
+
+
+
+```
+```{r, fig.width=8, fig.height=6}
+
+# Clustering for 2016
+
+set.seed(2077)
+
+supplementary_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 1)] |> c("ISO_code")
+
+dat <- data |> 
+  filter(year == 2016) |> 
+  select(-all_of(score_and_rank)) |> 
+  select(-all_of(supplementary_vars))
+
+metadat <- data |> 
+  filter(year == 2016) |> 
+  select(all_of(supplementary_vars))
+
+rownames(dat) <- metadat$countries
+
+d <- dist(dat, method = "euclidean")
+hc.res <- hclust(d = d, method = "ward.D2")
+
+{plot(hc.res, cex = 0.5, hang = -1)
+rect.hclust(hc.res, k = 6, border = 1:20)
+}
+fviz_nbclust(dat, hcut, hc_method = "ward.D2", method = c("silhouette"))
+
+nb <- cutree(hc.res, 6)
+fviz_cluster(list(data = dat, cluster = nb),
+             ellipse = TRUE, geom = "point",
+             main = "Cluster plot (Ward.D2 + Euclidean)")
+```
+
+
+```{r}
+set.seed(2077)
+
+supplementary_vars <- names(HFI)[sapply(str_split(names(HFI), "_"), function(x) length(x) == 1)] |> c("ISO_code")
+
+dat <- data |> 
+  select(-all_of(score_and_rank)) |> 
+  select(-all_of(supplementary_vars))
+
+metadat <- data |> 
+  select(all_of(supplementary_vars))
+
+res <- PCA(data_PCA, quanti.sup = c(1), quali.sup = c(2, 3, 4), graph = FALSE)
+newDatCluster <- res$ind$coord[, 1:2]
+
+hc <- dist(newDatCluster, method = "euclidean") #Distance
+res.hc <- hclust(hc, method = "ward.D2") #Linkage
+{plot(res.hc, cex = 0.5, hang = -1)
+rect.hclust(res.hc, k = 2, border = 2:7)}
+fviz_nbclust(dat, hcut, hc_method = "ward.D2", method = c("silhouette"))
+
+cluster <- cutree(res.hc, 2)
+plot(newDatCluster[, 1:2])
+plot(newDatCluster[, 1:2], col = cluster)
+
+```
+
+## t-SNE
+```{r}
+
+region_info <- data$region
+
+data_tSNE <- data |> 
+  select(-all_of(score_and_rank)) |> 
+  select(-all_of(supplementary_vars)) |> 
+  scale()
+
+set.seed(2077)
+
+sne <- Rtsne(data_tSNE)
+str(sne)
+plot(sne$Y)
+
+tsne_df <- as.data.frame(sne$Y)
+tsne_df$region <- region_info
+
+ggplot(tsne_df, aes(x = V1, y = V2, color = region)) +
+  geom_point(size = 2, alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "t-SNE by Region", x = "t-SNE 1", y = "t-SNE 2")
+
+group <- Hmisc::cut2(rowSums(data_tSNE), g = 2)
+table(group)
+plot(sne$Y, col = group)
+```
+
+## aweSOM
+```{r}
+countries_info <- data[data$year == 2016, "countries"]
+region_info <- data[data$year == 2016, "region"]
+
+year_info <- data$year
+
+
+data_aweSOM <- data |> 
+  filter(year == 2016) |> 
+  select(-all_of(score_and_rank)) |> 
+  select(-all_of(supplementary_vars)) |> 
+  scale()
+
+# countries_year <- paste0(countries_info, "_", year_info)
+# rownames(data_aweSOM) <- countries_year
+
+rownames(data_aweSOM) <- countries_info
+
+write.csv(data_aweSOM, "data_aweSOM.csv")
+
+# aweSOM()
+```
+
+```{r}
+# 新的SOM
+selected_vars <- c(supplementary_vars, level1_vars)
+
+countries_info <- data[data$year == 2016, "countries"]
+region_info <- data[data$year == 2016, "region"]
+
+data_SOM <- data |> 
+  filter(year == 2016) |> 
+  select(all_of(selected_vars)) |> 
+  select(-all_of(score_and_rank)) |> 
+  select(-all_of(supplementary_vars)) |> 
+  scale()
+
+rownames(data_SOM) <- countries_info
+write.csv(data_SOM, "data_SOM.csv")
+aweSOM()
+```
+
+
+
+```{r}
+library(aweSOM) # (version 1.3) 
+
+## Import Data
+# setwd("/path/to/datafile/directory") ## Uncomment this line and set the path to the datafile's directory
+import.data <- data.table::fread("data_aweSOM.csv", stringsAsFactors = TRUE, data.table = FALSE, check.names = TRUE)
+
+## Build training data (numeric)
+train.data <- import.data[, c("pf_rol", "pf_ss", "pf_movement", "pf_religion", "pf_association", "pf_expression", "pf_identity", "ef_government", "ef_legal", "ef_money", "ef_trade", "ef_regulation", "pf_rol_procedural", "pf_rol_civil", "pf_rol_criminal", "pf_ss_homicide", "pf_ss_disappearances", "pf_ss_women", "pf_movement_domestic", "pf_movement_foreign", "pf_movement_women", "pf_religion_estop", "pf_religion_harassment", "pf_religion_restrictions", "pf_association_association", "pf_association_assembly", "pf_association_political", "pf_association_prof", "pf_association_sport", "pf_expression_killed", "pf_expression_jailed", "pf_expression_influence", "pf_expression_control", "pf_expression_cable", "pf_expression_newspapers", "pf_expression_internet", "pf_identity_legal", "pf_identity_parental", "pf_identity_sex", "pf_identity_divorce", "ef_government_consumption", "ef_government_transfers", "ef_government_enterprises", "ef_government_tax", "ef_legal_judicial", "ef_legal_courts", "ef_legal_protection", "ef_legal_military", "ef_legal_integrity", "ef_legal_enforcement", "ef_legal_restrictions", "ef_legal_police", "ef_legal_crime", "ef_legal_gender", "ef_money_growth", "ef_money_sd", "ef_money_inflation", "ef_money_currency", "ef_trade_tariffs", "ef_trade_regulatory", "ef_trade_black", "ef_trade_movement", "ef_regulation_credit", "ef_regulation_labor", "ef_regulation_business")]
+### Scale training variables (unit variance)
+train.data <- scale(train.data)
+### Prepare plotting data
+plot.data <- import.data
+
+## Train SOM
+### RNG Seed (for reproducibility)
+set.seed(38198)
+### Initialization
+init <- somInit(train.data, ncols = 4, nrows = 4)
+### Training
+the.som <- kohonen::som(train.data, grid = kohonen::somgrid(4, 4, "hexagonal"), maxNA.fraction = 0.25, rlen = 100, alpha = c(0.05, 0.01), radius = c(2.65,-2.65), init = init, dist.fcts = "sumofsquares")
+
+## Quality measures
+somQuality(the.som, train.data)
+
+## Group cells into superclasses (hierarchical clustering)
+superclust <- hclust(dist(the.som$codes[[1]]), "complete")
+superclasses <- cutree(superclust, 2)
+## Apply clusterings to observations
+obs.class <- the.som$unit.classif
+obs.superclass <- superclasses[obs.class]
+
+## Interactive plot
+aweSOMplot(som = the.som, type = "Cloud", data = plot.data, 
+           variables = c("None", "pf_rol", "pf_ss", "pf_movement", "pf_religion", "pf_association", "pf_expression", "pf_identity", "ef_government", "ef_legal", "ef_money", "ef_trade", "ef_regulation", "pf_rol_procedural", "pf_rol_civil", "pf_rol_criminal", "pf_ss_homicide", "pf_ss_disappearances", "pf_ss_women", "pf_movement_domestic", "pf_movement_foreign", "pf_movement_women", "pf_religion_estop", "pf_religion_harassment", "pf_religion_restrictions", "pf_association_association", "pf_association_assembly", "pf_association_political", "pf_association_prof", "pf_association_sport", "pf_expression_killed", "pf_expression_jailed", "pf_expression_influence", "pf_expression_control", "pf_expression_cable", "pf_expression_newspapers", "pf_expression_internet", "pf_identity_legal", "pf_identity_parental", "pf_identity_sex", "pf_identity_divorce", "ef_government_consumption", "ef_government_transfers", "ef_government_enterprises", "ef_government_tax", "ef_legal_judicial", "ef_legal_courts", "ef_legal_protection", "ef_legal_military", "ef_legal_integrity", "ef_legal_enforcement", "ef_legal_restrictions", "ef_legal_police", "ef_legal_crime", "ef_legal_gender", "ef_money_growth", "ef_money_sd", "ef_money_inflation", "ef_money_currency", "ef_trade_tariffs", "ef_trade_regulatory", "ef_trade_black", "ef_trade_movement", "ef_regulation_credit", "ef_regulation_labor", "ef_regulation_business"),
+           superclass = superclasses, obsNames = plot.data[, "V1"], 
+           size = 400)
+```
+## Office Hours
+Since we are using an unsupervised method, it seems that I can't really ask causal ``why'' questions. So what types of questions would be more appropriate, do you think? For example, maybe classification-type questions? And then using the classification results as evidence to support my hypothesis.
+
+My research question is: into how many categories can countries be grouped based on economic freedom and personal freedom?key patterns
+
+How can we distinguish between countries where economic liberalization leads to political liberalization, and countries where economic liberalization does not lead to political liberalization (although perhaps such countries don't actually exist)?
+
+Regarding data:
+I used higher-level data to fill in missing values for lower-level data and conducted PCA analysis on data from all 9 years. I'm not sure if this is a reasonable approach, but I feel that no man ever steps in the same river twice.
+
+
+研究数据
+
+## Abstract
+
+## Introduction
+
+Friedman argued in _Capitalism and Freedom_ that the role of competitive capitalism the organization of the bulk of economic activity through private enterprise operating in a free market as a system of economic freedom and a necessary condition for political freedom. （这点我可以用数据点来检验，发现了 越有法治和个人自由的国家 就越靠近经济自由轴 这说明经济自由是政治自由的必要条件 但反过来呢 经济自由是否会带来政治自由？我们可以发现底下一堆中东阿拉伯国家 为我们这个问题提供了答案）
+
+RQ: Why were highly centralized regimes like South Korea under Park Chung Hee and Japan under Ito Hirobumi able to promote economic liberalization despite lacking political freedom? Are there contemporary parallels in countries like China and Singapore? How do these countries work?
+
+
+Hypothesis:
+- Political liberalization will lead to economic liberalization, which in turn fosters national prosperity and individual wealth. (economic freedom follows political freedom)
+- Democracy itself is not a necessary condition for economic prosperity.
+- Economic liberalization, in the long run, tends to promote political liberalization.
+- How to distinguish Nazi Germany/China and Singapore?
+- The mechanism by which economic liberalization promotes political liberalization (as proposed by modernization theory) only applies to countries undergoing peaceful development. It does not work on regimes characterized by extreme nationalism and expansionism.
+
+## Data and Methodology
+HFI
+
+PCA, Clustering, t-SNE, SOM(maybe?)
+### limitation of methods
+
+
+## Results
+
+Three principal components were retained in PCA for the analysis across countries. Together these first three principal components accounted for 53.41%. The 4th principal component captured only an additional 4.9% of the total data variability and the factor loading was dominated .
+
+PC1: Rule of law and personal freedom (The rule of law is the basement of personal freedom.) 34.74%
+
+PC2: economic freedom 13.44%
+
+PC3: Government intervention and individual security
+
+OR
+
+PC3: a spectrum of political governance styles in countries:
+- strongman regimes or one-party authoritarian states
+-- Kazakhstan, China, Russia
+
+- low-quality, flawed democracies (military juntas or electoral authoritarian states)
+-- a lot of African countries
+
+- in the middle
+-- partially democratic or fully democratic states
+
+## Discussion
+
+## Conclusion
+
+## References
+
+5 papers
+
+Regulation, trade and economic growth
+- 监管 经济制度的一部分 反映了政治制度
+
+The Quality of Government
+
+The Rule of Law, Freedom and Prosperity
+- 1 2 4
+
+
