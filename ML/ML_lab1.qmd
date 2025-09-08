@@ -1,0 +1,255 @@
+---
+title: "Machine Learning Lab"
+author: "Yukun Jiao"
+date: "2025-08-20"
+toc: false
+format: pdf
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+# Lab 1
+
+## Part 1: Bernie Sanders and Donald Trump tweets.
+
+### 1.
+
+```{r}
+#| warning: false
+#| message: false
+
+library(data.table)
+library(glmnet)
+library(ggplot2)
+library(mlbench)
+library(caret)
+library(splines)
+library(ggeffects)
+```
+
+```{r}
+# load data
+trumpbernie <- fread(file = "~/Documents/ML/Labs/Lab1/trumpbernie.csv")
+dim(trumpbernie) 
+```
+
+The dataset consists of 1003 observations and 1496 variables. Since the number of variables substantially exceeds the number of observations, the dataset is high-dimensional. Under such conditions, a standard logistic regression model is likely to perform poorly for prediction, due to overfitting and multicollinearity.
+
+### 2.
+
+```{r}
+mymodel <- glm(trump_tweet ~ ., data = trumpbernie, family="binomial")
+sum(!is.na(coef(mymodel)))
+coef(mymodel)[(1001:1050)]
+```
+
+There are many coefficients that are missing. In fact, 495 variables were identified as singular, and their coefficients could not be estimated due to perfect collinearity with other predictors.
+
+```{r}
+# Extract predictions on training data & observed values
+comparison_df <- data.frame(train_predictions=mymodel$fitted.values,
+observed=mymodel$y)
+# Apply prediction threshold
+comparison_df$train_predictions<-ifelse(comparison_df$train_predictions>=0.5,
+yes = 1,
+no = 0)
+# Compute accuracy (scale: 0-1, 0=0%, 1=100%)
+nrow(comparison_df[comparison_df$train_predictions==comparison_df$observed,]) /
+nrow(comparison_df)
+```
+
+The training accuracy here is 1 (100%). This indicates that the model is overfitted, and in such cases, the predictive capacity of the model is often poor.
+
+### 3.
+
+```{r}
+#| warning: false
+#| message: false
+
+
+# format the outcome variable as a factor variable
+trumpbernie$trump_tweet <- factor(trumpbernie$trump_tweet, levels = c(0,1))
+
+# Use package "caret" to do k-fold cross-validation
+tc <- caret::trainControl(method = 'cv', number = 3)
+
+set.seed(12345) # Set to ensure that folds are the same across models
+linear_model <- caret::train(trump_tweet ~ .,
+                             data = trumpbernie,
+                             method = "glm",
+                             trControl = tc,
+                             family = "binomial")
+```
+
+Some warnings were issued during model fitting, including non-convergence of the algorithm and rank-deficiency in the fitted model.
+
+```{r}
+linear_model$results$Accuracy
+
+pred_class <- predict(linear_model, newdata = trumpbernie)
+train_acc <- mean(pred_class == trumpbernie$trump_tweet)
+train_acc
+```
+
+The model achieved a test accuracy of `r linear_model$results$Accuracy` indicating that its predictions are essentially no better than random guessing, which is consistent with my expectations. These results suggest that the model is severely overfitted.
+
+### 4.
+```{r}
+X <- trumpbernie[,-c('trump_tweet'),with=F] # Exclude response and id columns.
+X <- as.matrix(X) # Make input data into a matrix
+
+cvglmnet <- cv.glmnet(x = X, 
+                            y = trumpbernie$trump_tweet,
+                            nfolds = 5,
+                            standardize = TRUE,
+                            family='binomial',
+                            alpha=0,
+                            type.measure = 'class')
+
+cvglmnet$lambda.min
+cvglmnet$cvm[cvglmnet$index[[1]]]
+```
+
+The value of $\lambda$ that minimizes the test error is `r cvglmnet$lambda.min`, corresponding to a test accuracy of `r 1 - cvglmnet$cvm[cvglmnet$index[[1]]]`, indicating that it is a better-performing model. The previous model had higher variance because its greater flexibility caused the results to be highly sensitive, leading to larger variance.
+
+
+### 5.
+```{r}
+plot(cvglmnet, sign.lambda = 1)
+```
+
+As $\lambda$ increases, the model becomes less flexible, and the variance decreases while the bias increases. Generally, the reduction in variance outweighs the increase in bias until the value of $\lambda$ that minimizes the test error is reached, which represents a noteworthy trade-off.
+
+
+### 6.
+```{r}
+best_coefs <- coef(cvglmnet, s = "lambda.min")
+best_coefs_dt <- data.table(word=rownames(best_coefs),
+                            coef=best_coefs[,1])
+best_coefs_dt[order(coef,decreasing = T)]
+```
+
+After extracting the coefficients at lambda.min, I found that words with positive coefficients (such as atlanta, patriot, and colorado) are more likely to indicate a Trump tweet, while words with negative coefficients (such as vulner, volunt, and view) are more likely to indicate a Bernie tweet. This is generally consistent with my expectations regarding the language styles of the two politicians: Trump's tweets tend to focus on geographic locations or patriotic topics, while Bernie's tweets highlight progressive social themes, emphasizing social vulnerability and volunteer-related activities.
+
+
+## Part 2: Social Network Ad Purchase
+
+### 1.
+
+```{r}
+sna_data <- fread("~/Documents/ML/Labs/Lab1/Kaggle_Social_Network_Ads.csv")
+sna_data$Purchased <- factor(sna_data$Purchased, levels = c(0,1))
+```
+
+### 2.
+
+```{r}
+# Use package "caret" to do k-fold cross-validation
+tc <- caret::trainControl(method = 'cv', number = 5)
+
+set.seed(12345) # Set to ensure that folds are the same across models
+nonlinear_model <- caret::train(Purchased ~ .,
+                             data = sna_data,
+                             method = "glm",
+                             trControl = tc,
+                             family = "binomial")
+
+nonlinear_model$results
+```
+The test accuracy is `r nonlinear_model$results$Accuracy`.
+
+### 3.
+
+```{r}
+set.seed(12345) # Set to ensure that folds are the same across models
+gam_model1 <- caret::train(Purchased ~ ns(Age,2) + ns(Salary, 2) + Gender,
+                           data = sna_data,
+                           method = "glm",
+                           trControl = tc,
+                           family = "binomial")
+gam_model1$results
+
+gam_model2 <- caret::train(Purchased ~ ns(Age,3) + ns(Salary, 3) + Gender,
+                           data = sna_data,
+                           method = "glm",
+                           trControl = tc,
+                           family = "binomial")
+gam_model2$results
+
+gam_model3 <- caret::train(Purchased ~ ns(Age,4) + ns(Salary, 4) + Gender,
+                           data = sna_data,
+                           method = "glm",
+                           trControl = tc,
+                           family = "binomial")
+gam_model3$results
+```
+
+#### a.
+The test accuracy has improved, confirming the effectiveness of the updated model.
+
+#### b.
+This indicates that the previous standard logistic regression model was underfitting. In other words, the earlier linear model was insufficient to capture the patterns in this dataset, so we need a more flexible model to fit it---namely, the GAM. Compared to the linear model, the GAM introduces more bias.
+
+#### c.
+I would select GAM 3, as it achieves the highest test accuracy among these models.
+
+### 4.
+```{r}
+final_model <- glm(Purchased ~ ns(Age,4) + ns(Salary, 4) +  Gender, 
+                   data=sna_data, 
+                   family = "binomial")
+ggpreds <- ggpredict(final_model)
+plot(ggpreds)
+```
+
+The results show that the effects of Age and Salary on the probability of purchase are both nonlinear, indicating that a standard linear logistic regression cannot fully capture these nonlinear effects.
+
+### 5.
+
+No, because Ridge and Lasso are intended to increase bias in order to mitigate overfitting. However, the current situation involves underfitting, which requires a reduction in bias.
+
+## Part 3: K-fold cross validation from scratch (bonus!)
+
+```{r}
+
+dt <- readRDS("~/Documents/ML/Labs/Lab1/dt.rds")
+
+head(dt)
+```
+
+```{r}
+chunk2 <- function(x,n) split(x, cut(seq_along(x), n, labels = FALSE))
+
+cv_poly <- function(k, d, dt) {
+  n <- nrow(dt)
+  folds <- chunk2(1:n, k)
+  mse_list <- c()
+  for (i in 1:k){
+    test_idx <- folds[[i]]
+    train_idx <- setdiff(1:n, test_idx)
+    train_data <- dt[train_idx, ]
+    test_data  <- dt[test_idx, ]
+    
+     model <- lm(Y ~ poly(X, d), data = train_data)
+     preds <- predict(model, newdata = test_data)
+     
+     mse <- mean((test_data$Y - preds)^2)
+     mse_list <- c(mse_list, mse)
+  }
+  return(mean(mse_list))
+}
+
+d_values <- 1:10
+mse_values <- sapply(d_values, function(d) cv_poly(5, d, dt))
+plot(d_values, mse_values, type = "b",
+     pch = 19, col = "darkred", lty = 1,
+     xlab = "Polynomial Degree (d)",
+     ylab = "Average MSE",
+     main = "Average MSE Across Polynomial Degrees",
+     xaxt = "n")
+
+axis(1, at = d_values, labels = d_values)
+```
+
+The results show that as the polynomial degree $d$ increases, the average \text{MSE} initially decreases and then rises, indicating that the model captures some nonlinearity in the data, but overly high-degree polynomials may lead to overfitting. The minimum average \text{MSE} is observed at $d = 10$; however, this may reflect overfitting due to the small dataset. Choosing lower-degree polynomials such as $d = 3$ or $d = 5$ achieves comparably low average \text{MSE} while ensuring a more robust and interpretable model.
