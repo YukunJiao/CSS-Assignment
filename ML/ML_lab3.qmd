@@ -45,13 +45,14 @@ X_test  <- X_all[-idx, , drop = FALSE]
 y_test  <- y_all[-idx]
 ```
 
-导入data 按照80%/20%分成训练集和测试集
+Based on the information that there are no complex interactions or non-linearities, it can be inferred that a neural network will not excel on this dataset. Neural networks are better suited for capturing non-linear relationships and interactions. Although they can also capture linear relationships, they require more parameters, lack interpretability, and their predictive performance is likely to be close to that of a simple linear regression model.
 
-基于现有的非线性和无交互作用的信息，可以推测神经网络并不会excel在这个数据集上，因为神经网络更适合捕捉非线性关系和交互作用。尽管它也能捕捉线性关系，但所需的参数更多，也缺乏解释性，且预测效果很可能和简单的线性回归模型的准确率接近。
-
-### 2. a standard logistic regression model
+### 2.
 
 ```{r}
+#| warning: false
+#| message: false
+
 set.seed(1984)
 train_df <- data.frame(y = y_train, X_train)
 test_df <- data.frame(y = y_test, X_test)
@@ -100,17 +101,19 @@ history_A <- model_A |>
     verbose = 0
   )
 
-proba_A <- as.numeric(model_A |> predict(X_test))
+proba_A <- as.numeric(model_A |> predict(X_test, verbose = 0))
 acc_A   <- acc_bin(proba_A, y_test)
-cat(sprintf("[Hitters] Model B (1 hidden) — test accuracy: %.3f\n", acc_A))
+cat(sprintf("[adults] Model 1 (1 hidden) — test accuracy: %.3f\n", acc_A))
 
 ```
 
-mnn的准确率好了一点点相较于a standard logistic regression model，但仍然很接近，且需要更多的计算能力和参数调整，并且缺乏解释性，这和我在#1中的判断一致。
+The accuracy of the MNN is slightly better compared to a standard logistic regression model, but still very close. Moreover, it requires more computational power and parameter tuning, and it lacks interpretability. This is consistent with my assessment in #1.
 
 ### 4.
 
 ```{r}
+#| warning: false
+#| message: false
 
 k_clear_session()
 model_D <- keras_model_sequential() |>
@@ -136,16 +139,14 @@ history_D <- model_D |>
     verbose = 0
   )
 
-proba_D <- as.numeric(model_D |> predict(X_test))
+proba_D <- as.numeric(model_D |> predict(X_test, verbose = 0))
 acc_D   <- acc_bin(proba_D, y_test)
-cat(sprintf("[Hitters] Model D (3 hidden) — test accuracy: %.3f\n", acc_D))
-model_D %>% summary()
+cat(sprintf("[adults] Model 2 (4 hidden) — test accuracy: %.3f\n", acc_D))
+# model_D |> summary()
 ```
+The number of trainable parameters is $1536 + 32896 + 8256 + 2080 + 33 = 44,801$.
 
-参数应该是$5\times 256+ ... = xx$ $1536 + 32896 + 8256 + 2080 + 33 = 44,801$
-
-效果更好 但是提升也不是很大 我推测可能存在一定很有限的非线性关系和交互作用 让神经网络能捕获到他们，提升准确率。
-
+The performance is better, but the improvement is not very large. I suspect there may be some limited non-linear relationships and interactions that allow the neural network to capture them, leading to the improvement in accuracy.
 
 ### 5.
 
@@ -165,6 +166,9 @@ y_test  <- y_all[-idx]
 ```
 
 ```{r}
+#| warning: false
+#| message: false
+
 set.seed(1984)
 train_df <- data.frame(y = y_train, X_train)
 test_df <- data.frame(y = y_test, X_test)
@@ -205,12 +209,14 @@ history_A <- model_A |>
     verbose = 0
   )
 
-proba_A <- as.numeric(model_A |> predict(X_test))
+proba_A <- as.numeric(model_A |> predict(X_test, verbose = 0))
 acc_A   <- acc_bin(proba_A, y_test)
-cat(sprintf("[Hitters] Model B (1 hidden) — test accuracy: %.3f\n", acc_A))
+cat(sprintf("[adults_aug] Model 3 (1 hidden) — test accuracy: %.3f\n", acc_A))
 ```
 
 ```{r}
+#| warning: false
+#| message: false
 
 k_clear_session()
 model_D <- keras_model_sequential() |>
@@ -236,16 +242,15 @@ history_D <- model_D |>
     verbose = 0
   )
 
-proba_D <- as.numeric(model_D |> predict(X_test))
+proba_D <- as.numeric(model_D |> predict(X_test, verbose = 0))
 acc_D   <- acc_bin(proba_D, y_test)
-cat(sprintf("[Hitters] Model D (3 hidden) — test accuracy: %.3f\n", acc_D))
-model_D %>% summary()
+cat(sprintf("[adults_aug] Model 4 (4 hidden) — test accuracy: %.3f\n", acc_D))
+# model_D |> summary()
 ```
 
-神经网络模型应该very outperforming比起standard logistic  regression model
+The neural network model should significantly outperform the standard logistic regression model.
 
-
-在这个aug数据集上 使用神经网络模型显著提升了准确率 这是因为数据集中添加了很多非线性关系和交互作用的变量，神经网络可以很好的捕捉这些效应，而standard logistic  regression model不能捕捉到，因此准确率不如神经网络模型。
+On this augmented dataset, the neural network model substantially improves accuracy. This is because many variables containing non-linear relationships and interactions were added to the dataset. Neural networks can capture these effects very well, whereas the standard logistic regression model cannot, and therefore its accuracy is lower than that of the neural network model.
 
 ### 6.
 
@@ -280,12 +285,12 @@ history_E <- model_E |>
     verbose = 0
   )
 
-proba_E <- as.numeric(model_E |> predict(X_test))
+proba_E <- as.numeric(model_E |> predict(X_test, verbose = 0))
 acc_E   <- acc_bin(proba_E, y_test)
-cat(sprintf("[Hitters] Model E (3 hidden) — test accuracy: %.3f\n", acc_E))
-model_E %>% summary()
+cat(sprintf("[adults_aug] Model 5 (4 hidden) — test accuracy: %.3f\n", acc_E))
+# model_E |> summary()
 
-# results <- model_E %>% evaluate(X_test, y_test, verbose = 0)
+# results <- model_E |> evaluate(X_test, y_test, verbose = 0)
 # results$accuracy
 ```
 
@@ -318,15 +323,15 @@ history_F <- model_F |>
     verbose = 0
   )
 
-proba_F <- as.numeric(model_F |> predict(X_test))
+proba_F <- as.numeric(model_F |> predict(X_test, verbose = 0))
 acc_F   <- acc_bin(proba_F, y_test)
-cat(sprintf("[Hitters] Model F (3 hidden) — test accuracy: %.3f\n", acc_F))
-model_F %>% summary()
+cat(sprintf("[adults_aug] Model 6 (4 hidden) — test accuracy: %.3f\n", acc_F))
+# model_F |> summary()
 ```
 
-dropout rate = 0.1的效果更好，可能是因为dropout learning进行了正则化，降低了variance，尽管可能提升了bias，但variance降低多于bias提高, which is worthful，accuracy得到了进一步提高.
+A dropout rate of 0.1 performs better, possibly because dropout learning provides regularization and reduces variance. Although it may increase bias, the reduction in variance outweighs the increase in bias, which makes it worthwhile, and accuracy is further improved.
 
-dropout rate = 0.9的准确率大幅度下降，很可能也是降低了variance但是提高了bias，但是明显bias的提高远超过variance降低带来的好处，导致了accuracy的极端降低.
+With a dropout rate of 0.9, accuracy drops dramatically. This is likely also due to reduced variance but with a much greater increase in bias. The increase in bias clearly outweighs the benefits of reduced variance, leading to a sharp decline in accuracy.
 
 
 ## Part 2
@@ -349,7 +354,7 @@ y_test <- fashion_test$labels
 
 
 # fashion_train$labels
-num <- 17527
+num <- 5
 # fashion_label <- fashion_train$labels[num]
 # fashion_train$fashion_labels[fashion_label+1]
 
@@ -374,6 +379,9 @@ y_test_cat  <- to_categorical(y_test,  num_classes = 10)
 
 
 ```{r}
+#| warning: false
+#| message: false
+
 k_clear_session()
 cnn <- keras_model_sequential() |>
   layer_conv_2d(filters = 8, kernel_size = c(3,3), activation = "relu",
@@ -385,7 +393,6 @@ cnn <- keras_model_sequential() |>
   layer_dense(units = 10, activation = "softmax")
 ```
 
-这个是sparse的 可以直接用y_train 不需要one-hot code
 ```{r}
 set.seed(1984)
 cnn |>
@@ -407,12 +414,12 @@ history_cnn <- cnn |>
 # Evaluate on test set
 cnn_eval <- cnn |>
   evaluate(x_test, y_test, verbose = 0)
-cat(sprintf("\n[MNIST] CNN — test accuracy: %.3f\n", as.numeric(cnn_eval['accuracy'])))
+cat(sprintf("\n[fashion] CNN — test accuracy: %.3f\n", as.numeric(cnn_eval['accuracy'])))
 ```
 
 The accuracy is `r round(cnn_eval$accuracy, 3)`.
 
-添加应该会改善性能
+Increasing M (number of hidden layers), K (number of convolutional layers), the number of filters, or the number of hidden units in the fully connected layer should improve performance, as it allows the model to capture more local features.
 
 ### 3.
 ```{r}
@@ -449,19 +456,22 @@ history_cnn_complex <- cnn_complex |>
 # Evaluate on test set
 cnn_complex_eval <- cnn_complex |>
   evaluate(x_test, y_test, verbose = 0)
-cat(sprintf("\n[MNIST] cnn_complex — test accuracy: %.3f\n", as.numeric(cnn_complex_eval['accuracy'])))
+cat(sprintf("\n[fashion] cnn_complex — test accuracy: %.3f\n", as.numeric(cnn_complex_eval['accuracy'])))
 ```
 
-下降了 过拟合了 没有正则化
+The accuracy decreased, likely due to overfitting, as no regularization was applied.
 
-从trade-off角度来说 也就是偏差少了 但是方差增加太多
+From the perspective of the bias-variance trade-off, the model achieved lower bias, but the variance increased too much, which led to the drop in performance.
+
+
+```{r}
+cnn |> summary()
+cnn_complex |> summary()
+```
+
 
 ### 4.
-在第 2 和第 3 步中，我们都使用了 2×2 的最大池化。
-为什么一般来说不建议把池化窗口设得太大（相对于图像的尺寸）？
-这种做法会增加偏差 (bias)，还是方差 (variance)？
-
-因为下采样会增加偏差 降低方差 但是如果下采样太厉害 就会损失太多细节 导致filter无法很好的捕捉到特征。
+Because downsampling increases bias and reduces variance. However, if the downsampling is too aggressive, too much detail will be lost, making it difficult for the filters to effectively capture features.
 
 ### 5.
 
@@ -476,10 +486,9 @@ fashion_labels_dt <- data.table(label=fashion_labels,number=0:9)
 accuracy_by_class_dt <- merge(x=accuracy_by_class_dt,y=fashion_labels_dt,by.x='actual',by.y='number')
 accuracy_by_class_dt[,.(accuracy=mean(correct)),by=label][order(accuracy,decreasing = T)]
 ```
+From the table above, we can see that there are significant differences in predictability across categories. For example, Ankle boot, Sandal, and Trouser are the easiest to classify correctly, whereas Shirt is difficult to classify.
 
-从上表可以发现，不同类别之间存在显著的可预测性差异，比如Ankle boot, Sandal, Trouser是最容易被正确分类的。而Shirt难以分类。
-
-可以判断这是合理的。
+This can be considered reasonable.
 
 ### 6.
 
@@ -495,11 +504,9 @@ fashion_unlabeled$labels <- predicted_classes
 demo_dt <- as.data.table(fashion_unlabeled$demographics)
 demo_dt[, id := .I]
 
-# 标签
 labels_dt <- data.table(id = seq_along(fashion_unlabeled$labels),
                         labels = fashion_unlabeled$labels)
 
-# 逐步合并
 merged_dt <- merge(demo_dt, labels_dt, by = "id")
 ```
 
