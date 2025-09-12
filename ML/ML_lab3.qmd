@@ -508,5 +508,49 @@ labels_dt <- data.table(id = seq_along(fashion_unlabeled$labels),
                         labels = fashion_unlabeled$labels)
 
 merged_dt <- merge(demo_dt, labels_dt, by = "id")
+
+fashion_labels_dt
+
+fashion_full_dt <- merge(
+  x    = merged_dt,
+  y    = fashion_labels_dt,
+  by.x = "labels",
+  by.y = "number",
+  all.x = TRUE
+)
 ```
 
+```{r}
+fashion_full_dt
+```
+
+2016 到 2017 年间消费者行为模式是如何变化的
+
+预计
+
+```{r}
+fashion_full_dt |> 
+  group_by(label, year) |> 
+  summarize(
+    age_average = mean(age),
+    income_average = mean(income),
+    education_years_average = mean(education_years)
+  )
+```
+
+
+```{r}
+fashion_full_dt$label <- factor(fashion_full_dt$label)
+levels(fashion_full_dt$label)
+fashion_full_dt$label <- relevel(fashion_full_dt$label, ref = "Bag")
+
+mn_fit <- multinom(label ~ age + year + ses_score, data = fashion_full_dt, trace = FALSE)
+
+
+summary(mn_fit)
+exp(coef(mn_fit))
+```
+
+In general, as the ses_score increases, the probability of choosing a certain product rather than a bag decreases. For example, for ankle boots, each one-unit increase in ses_score reduces the relative risk ratio of choosing ankle boots over bags to 66% of its original value.
+
+On the other hand, age and year have little impact on product choice, as their relative risk ratios for choosing a particular product over bags remain largely unchanged.
