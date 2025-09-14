@@ -25,6 +25,7 @@ editor:
 library(keras); library(keras3); library(tensorflow)
 library(ggplot2); library(dplyr); library(tidyr)
 library(data.table); library(rpart); library(caret)
+library(nnet)
 ```
 
 
@@ -524,10 +525,6 @@ fashion_full_dt <- merge(
 fashion_full_dt
 ```
 
-2016 到 2017 年间消费者行为模式是如何变化的
-
-预计
-
 ```{r}
 fashion_full_dt |> 
   group_by(label, year) |> 
@@ -551,6 +548,6 @@ summary(mn_fit)
 exp(coef(mn_fit))
 ```
 
-In general, as the ses_score increases, the probability of choosing a certain product rather than a bag decreases. For example, for ankle boots, each one-unit increase in ses_score reduces the relative risk ratio of choosing ankle boots over bags to 66% of its original value.
+In general, as the ses_score increases, the probability of choosing a certain product rather than a bag decreases. For example, for ankle boots, each one-unit increase in ses_score reduces the relative odds ratio of choosing ankle boots over bags to 66% of its original value.
 
-On the other hand, age and year have little impact on product choice, as their relative risk ratios for choosing a particular product over bags remain largely unchanged.
+On the other hand, age and year have little impact on product choice, as their relative odds ratios for choosing a particular product over bags remain largely unchanged.
