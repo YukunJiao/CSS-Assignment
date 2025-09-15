@@ -12,3 +12,6 @@ The folder contains two individual assignments and a group assignment that inves
 Digital Strategies for Social Science
 
 The folder contains two assignments in which assignment 1 is about crawling and scraping and assignment 2 is about dimensional reduction.
+
+## ML
+Machine Learning for Social Science
