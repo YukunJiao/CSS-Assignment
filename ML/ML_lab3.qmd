@@ -346,7 +346,6 @@ fashion_test <- readRDS("~/Documents/ML/Labs/Lab3/fashion_2016_test.rds")
 
 ### 2.
 
-take a look at these labels
 ```{r}
 x_train <- fashion_train$images
 y_train <- fashion_train$labels
@@ -477,6 +476,9 @@ Because downsampling increases bias and reduces variance. However, if the downsa
 ### 5.
 
 ```{r}
+#| warning: false
+#| message: false
+
 predictions <- cnn %>% predict(x_test)
 predicted_classes <- apply(predictions, 1, which.max)- 1
 accuracy_by_class_dt <- data.table(actual=y_test,predicted=predicted_classes)
@@ -487,13 +489,17 @@ fashion_labels_dt <- data.table(label=fashion_labels,number=0:9)
 accuracy_by_class_dt <- merge(x=accuracy_by_class_dt,y=fashion_labels_dt,by.x='actual',by.y='number')
 accuracy_by_class_dt[,.(accuracy=mean(correct)),by=label][order(accuracy,decreasing = T)]
 ```
-From the table above, we can see that there are significant differences in predictability across categories. For example, Ankle boot, Sandal, and Trouser are the easiest to classify correctly, whereas Shirt is difficult to classify.
+
+From the table above, we can see that there are significant differences in predictability across categories. For example, Ankle boot, Sandal, Bag, and Trouser are the easiest to classify correctly, whereas Shirt is difficult to classify.
 
 This can be considered reasonable.
 
 ### 6.
 
 ```{r}
+#| warning: false
+#| message: false
+
 fashion_unlabeled <- readRDS("~/Documents/ML/Labs/Lab3/fashion_2015_2016_unlabeled.rds")
 
 x_test <- fashion_unlabeled$images
@@ -510,7 +516,7 @@ labels_dt <- data.table(id = seq_along(fashion_unlabeled$labels),
 
 merged_dt <- merge(demo_dt, labels_dt, by = "id")
 
-fashion_labels_dt
+# fashion_labels_dt
 
 fashion_full_dt <- merge(
   x    = merged_dt,
@@ -522,8 +528,9 @@ fashion_full_dt <- merge(
 ```
 
 ```{r}
-fashion_full_dt
+# fashion_full_dt
 ```
+
 
 ```{r}
 fashion_full_dt |> 
@@ -535,19 +542,19 @@ fashion_full_dt |>
   )
 ```
 
+Consumer demographics remained largely stable between 2016 and 2017 across all product categories. Average age, income, and education levels changed only slightly, with differences too small to be meaningful.
 
 ```{r}
 fashion_full_dt$label <- factor(fashion_full_dt$label)
 levels(fashion_full_dt$label)
 fashion_full_dt$label <- relevel(fashion_full_dt$label, ref = "Bag")
 
-mn_fit <- multinom(label ~ age + year + ses_score, data = fashion_full_dt, trace = FALSE)
+mn_fit <- multinom(label ~ age*year + ses_score*year, data = fashion_full_dt, trace = FALSE)
 
+# summary(mn_fit)
 
-summary(mn_fit)
 exp(coef(mn_fit))
+
 ```
 
-In general, as the ses_score increases, the probability of choosing a certain product rather than a bag decreases. For example, for ankle boots, each one-unit increase in ses_score reduces the relative odds ratio of choosing ankle boots over bags to 66% of its original value.
-
-On the other hand, age and year have little impact on product choice, as their relative odds ratios for choosing a particular product over bags remain largely unchanged.
+In the multinomial logistic regression, I set bags as the reference category. Across all other product categories, the odds ratios for age, socio-economic status (SES), and year were very close to 1, suggesting that these factors had no meaningful effect on the likelihood of choosing a given product over bags. In addition, the interaction terms ($age \times year$ and $SES \times year$) were also close to 1, indicating that the influence of age and SES on product choice did not change between 2016 and 2017. Overall, consumer behavior patterns remained stable across the two years.
