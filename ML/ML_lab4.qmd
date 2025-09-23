@@ -1,0 +1,342 @@
+---
+title: "Machine Learning Lab"
+author: "Yukun Jiao"
+date: "2025-09-17"
+toc: false
+format: pdf
+knitr: 
+  opts_chunk:
+    fig.align: center
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+# Lab 4
+
+## Part 1:
+
+### 1.
+
+```{r}
+#| warning: false
+#| message: false
+
+library(data.table)
+library(ggplot2)
+library(mlbench)
+library(elasticnet)      # New
+library(mclust)          # New
+library(scatterplot3d)
+```
+
+```{r}
+taste_influence <- read.csv("~/Documents/ML/Labs/Lab4/taste_influence.csv")
+
+str(taste_influence)
+```
+
+```{r}
+plot(taste_influence$jazz, taste_influence$pop,
+     xlab = "jazz taste score",
+     ylab = "pop taste score",
+     main = "Scatterplot of jazz vs pop taste")
+
+```
+From this two-dimensional perspective, three centers can be identified with respect to jazz and pop taste. One observation is that individuals with a high jazz taste score tend to have a low pop taste score, whereas individuals with a low jazz taste score may have either high or low pop taste scores.
+
+### 2.
+```{r}
+taste <- taste_influence[, c("jazz", "pop", "hiphop")] |> scale() |> as.matrix()
+```
+
+### 3.
+```{r}
+#| warning: false
+#| message: false
+
+ks <- 1:20
+wss <- c()
+for(i in 1:length(ks)){
+  temp <- kmeans(x = taste, centers = ks[i],nstart = 100) # Use nstart=100 for stability
+  wss[i] <- temp$tot.withinss # sum(temp_withinss)
+}
+plot(wss)
+```
+According to the elbow method, choosing $k = 6$ is appropriate, since adding further complexity only brings marginal returns.
+
+### 4.
+```{r}
+set.seed(42)
+finalk <- kmeans(x = taste, centers = 6, nstart = 100)
+finalk$centers
+```
+
+
+\begin{table}[htbp]
+\centering
+\caption{Cluster centroids based on musical taste scores}
+\begin{tabular}{lllll}
+\toprule
+Cluster & Jazz taste score & Pop taste score & Hip-hop taste score & Interpretation \\
+\midrule
+1 & Low  & Low  & High & Hip-hop oriented group \\
+2 & Low  & High & High & Pop + hip-hop mixed group \\
+3 & High & Low  & Low  & Jazz oriented group \\
+4 & High & Low  & High & Jazz + hip-hop mixed group \\
+5 & Low  & Low  & Low  & Low engagement group \\
+6 & Low  & High & Low  & Pop oriented group \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The centroids indicate that the six clusters capture distinct musical tastes, suggesting that the clusters are meaningfully distinct.
+
+### 5.
+```{r}
+set.seed(42)
+finalk_test <- kmeans(x = taste, centers = 2, nstart = 100)
+finalk_test$centers
+```
+In the case of $k = 2$:
+
+Cluster 1 can be understood as a pop-oriented group, characterized by relatively low levels of jazz orientation but a stronger inclination toward pop. Hip-hop taste does not play a defining role for this group.
+
+Cluster 2 represents a jazz-oriented group, marked by a pronounced preference for jazz and a weaker inclination toward pop, with hip-hop again contributing little to the differentiation.
+
+Taken together, the two-cluster solution highlights a clear contrast between jazz-oriented and pop-oriented individuals, while hip-hop does not emerge as a key factor in the separation. This suggests that individuals with strong jazz orientation are particularly distinct. Although this simplified specification inevitably loses some of the nuance captured in solutions with more clusters, it remains straightforward and appropriate if the primary interest is in the relationship and distribution between jazz and pop music tastes.
+
+### 6.
+```{r}
+taste_influence$cluster <- factor(finalk$cluster)
+
+lm1 <- lm(influence ~ cluster, data = taste_influence)
+coef(lm1)
+# summary(lm1)
+```
+
+
+The linear regression results show that there are significant differences in influence across clusters. The reference cluster is Cluster 1, with an average influence score of 1.802 units. Cluster 4 has the highest influence, about 0.816 units higher than Cluster 1, while Cluster 5 has the lowest influence, about 1.600 units lower than Cluster 1.
+
+### 7.
+```{r}
+plot(taste_influence$jazz, taste_influence$pop,
+     xlab = "jazz taste score",
+     ylab = "pop taste score",
+     main = "Scatterplot of jazz vs pop taste",
+     pch = 19, col = taste_influence$cluster)
+
+scatterplot3d(taste_influence[, 1:3], color = taste_influence$cluster)
+```
+
+
+The clustering patterns are captured, and the classification appears clearer. In the two-dimensional jazz–pop view, the six clusters overlap in pairs, which makes them appear as three groups in the earlier plot.
+
+By examining the three-dimensional plot, it can be seen that the clusters are more clearly separated, although some boundaries are still close to each other.
+
+### 8.
+```{r}
+lls <- bics <- c()
+ks <- 1:10
+for(i in 1:10){
+  temp <- mclust::Mclust(data = taste, G = ks[i])
+  lls[i] <- temp$loglik
+  bics[i] <- temp$bic
+}
+plot(lls)
+plot(bics)
+```
+	
+According to the elbow method, choosing $G = 7$ is appropriate, since adding further complexity only yields marginal returns.
+
+```{r}
+
+
+gmm <- mclust::Mclust(data = taste) # If we don't specify "G", mclust will try to find an optimal for you.
+gmm$G # 7 here (because it uses BIC as criteria)
+gmm$bic
+
+gmm$parameters$mean
+
+taste_influence$cluster_gmm <- factor(gmm$classification)
+
+lm2 <- lm(influence ~ cluster_gmm, data = taste_influence)
+coef(lm2)
+# summary(lm2)
+
+plot(taste_influence$jazz, taste_influence$pop,
+     xlab = "jazz taste score",
+     ylab = "pop taste score",
+     main = "Scatterplot of jazz vs pop taste",
+     pch = 19, col = taste_influence$cluster_gmm)
+
+scatterplot3d(taste_influence[, 1:3], color = taste_influence$cluster_gmm)
+```
+
+
+\begin{table}[htbp]
+\centering
+\caption{Cluster centroids based on musical taste scores (GMM, $G=7$)}
+\begin{tabular}{lllll}
+\toprule
+Cluster & Jazz taste score & Pop taste score & Hip-hop taste score & Interpretation \\
+\midrule
+1 & Low  & Low  & High & Hip-hop oriented group \\
+2 & Low  & Low  & Low  & Low engagement group \\
+3 & Low  & High & Low  & Pop oriented group \\
+4 & Low  & High & High & Pop + hip-hop mixed group \\
+5 & High & Low  & Low  & Jazz oriented group \\
+6 & High & Low  & High & Jazz + hip-hop mixed group \\
+7 & High & High & High & All-round music lovers \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The distinction appears meaningful, as the clusters represent substantively different groups.
+
+The linear regression results indicate significant differences in influence across clusters. Cluster 1 serves as the reference group, with an average influence score of 1.796 units. Cluster 7 exhibits the highest influence, about 1.281 units higher than Cluster 1, whereas Cluster 2 shows the lowest influence, about 1.599 units lower than Cluster 1.
+
+The clustering patterns are well captured, and the classification becomes clearer. In the two-dimensional jazz–pop view, the seven clusters tend to overlap in pairs, which makes them appear as three broader groups in the earlier visualization.
+
+By examining the three-dimensional plot, it is evident that the clusters are more distinctly separated, although some of the boundaries remain close to each other.
+	
+### 9.
+```{r}
+taste_influence$uncertainity <- gmm$uncertainty
+lm2 <- lm(influence ~ cluster_gmm + uncertainity, data = taste_influence)
+coef(lm2)
+# summary(lm2)
+```
+
+
+The linear regression results with uncertainty included show that there are significant differences in influence across clusters. Cluster 1 serves as the reference group, with an average influence score of 2.062 units. Cluster 7 exhibits the highest influence, about 1.439 units higher than Cluster 1, whereas Cluster 2 shows the lowest influence, about 1.614 units lower than Cluster 1.
+
+The coefficient for uncertainty is –4.43, indicating that when the uncertainty of a cluster assignment increases by 1, the average influence decreases by approximately 4.43 units.
+
+In other words, individuals who are more ``ambiguous'' (i.e., located near the cluster boundaries) tend to have lower influence.
+
+## Part 2
+
+### 1.
+```{r}
+neighborhood <- read.csv("~/Documents/ML/Labs/Lab4/neighborhood.csv")
+dim(neighborhood)
+colnames(neighborhood)
+```
+The dataset neighborhood.csv consists of 200 observations and 25 numeric variables. These variables can be grouped into four main categories:
+	1.	Individual taste preferences, such as preferences for music genres and film types;
+	2.	Neighborhood-level characteristics, including crime, unemployment, population size, and average temperature;
+	3.	City-level average taste measures, reflecting aggregated cultural preferences at the city level;
+	4.	Socioeconomic indicators, such as income and education.
+
+
+### 2.
+```{r}
+pca1 <- prcomp(x = neighborhood)
+pca1$rotation[, 1:2]
+```
+Without standardization, the loadings are not on the same scale, since the unscaled variables are measured in different magnitudes. This makes the loadings incomparable, so the data must be scaled first.
+
+
+### 3.
+```{r}
+neighborhood_scaled <- scale(neighborhood)
+pca2 <- prcomp(neighborhood_scaled)
+```
+
+```{r}
+res_standard_pca <- summary(pca2)
+# res_standard_pca$importance
+plot(res_standard_pca$importance[2,])
+plot(cumsum(res_standard_pca$importance[2,])) 
+```
+
+According to the proportion of variance explained plot, we can retain 3 PCs to explain about 55% of the variance, or 10 PCs to explain around 80%. Here we choose 3 PCs for easier interpretation while still capturing about half of the variance.
+
+### 4.
+```{r}
+# Principal component loadings
+pca2$rotation[,c(1:3)]
+```
+
+The principal components involve too many variables, making it difficult to provide easy and substantively meaningful interpretations.
+	
+### 5.
+```{r}
+# Sparse PCA comparison
+penalities <- c(0,1,5,10,20,80,100,200,500,1000)
+spca_pevs <- c()
+spca_ps <- c()
+for(i in 1:length(penalities)){
+  temp <- spca(x = neighborhood_scaled, 
+               K = 3, 
+               type = 'predictor', 
+               para = c(rep(penalities[i],ncol(neighborhood_scaled))), 
+               sparse = 'penalty')
+  spca_pevs[i] <- sum(temp$pev)
+  spca_loadings <- temp$loadings
+  ps <- length(spca_loadings[abs(spca_loadings)<=0.01]) / length(spca_loadings)
+  spca_ps[i] <- ps
+  if(length(ps)==0){ps <- 0}
+}
+
+is_pev_dt <- data.table(lambda=penalities,
+                        spca_PEV=spca_pevs,
+                        spca_PS=spca_ps)
+standard_PCA_PEV <- is_pev_dt[lambda==0]$spca_PEV
+is_pev_dt[,IS:=standard_PCA_PEV * spca_PEV * spca_PS]
+
+my_plot <- ggplot(is_pev_dt, aes(x=spca_PS)) +
+  geom_line( aes(y=IS)) + 
+  geom_line( aes(y=spca_PEV),linetype='dashed') +
+  scale_y_continuous(name = "IS",
+    sec.axis = sec_axis(~.*1, name="PEV",breaks = scales::pretty_breaks(n=8)),
+    breaks = scales::pretty_breaks(n=8)) +
+  ggtitle('PEV x IS x PS for USarrest data') +
+  theme_gray(base_size = 10)
+plot(my_plot)
+# Re-fit best spec
+final_gmm <- spca(x = neighborhood_scaled, 
+                  K = 3, 
+                  type = 'predictor', 
+                  para = rep(80, ncol(neighborhood_scaled)), 
+                  sparse = 'penalty')
+# final_gmm$loadings
+L <- as.data.frame(final_gmm$loadings)
+L_nz <- subset(L, PC1 != 0 | PC2 != 0 | PC3 != 0)
+L_nz
+```
+After applying sparse PCA, three principal components can be clearly interpreted.
+
+PC1 loads on income, education, nbhood_avg_income, and nbhood_avg_education (all with negative signs), as well as positively on nhood_crime and nbhood_unemployment. This component distinguishes high-income, well-educated individuals and neighborhoods from low-income, low-education contexts characterized by higher crime and unemployment. It therefore represents a socioeconomic status axis.
+
+PC2 loads on music taste variables, with negative weights for taste_jazz, taste_classical, and taste_blues, and positive weights for taste_pop, taste_country, and taste_raegge. This dimension captures the contrast between ``highbrow/traditional musical tastes” (jazz, classical, blues) and “popular/mainstream musical tastes'' (pop, country, reggae). Hence, PC2 reflects a musical preference axis.
+
+PC3 loads on city-level average taste variables, with negative weights for city_avg_taste_jazz, city_avg_taste_classical, and city_avg_taste_blues, and positive weights for city_avg_taste_pop, city_avg_taste_country, and city_avg_taste_raegge. This component differentiates cultural environments where cities are oriented toward highbrow music from those where popular music dominates. PC3 can thus be interpreted as a city-level cultural taste axis.
+
+Compared to standard PCA, sparse PCA produces components that are easier to interpret, since each dimension is associated with only a small subset of variables. However, there exists a variance–sparsity trade-off, and sparse PCA sacrifices some explained variance.
+
+### 6.
+```{r}
+gen_data <- function(n,p){
+  df <- c()
+  for(i in 1:p){
+    ith_var <- rnorm(n = n, mean = 0, sd = 1)
+    df <- cbind(df,ith_var)
+    }
+  return(df)
+}
+df <- gen_data(50, 50)
+```
+
+```{r}
+df_scaled <- scale(df)
+pca_df <- prcomp(df_scaled)
+res_standard_pca <- summary(pca_df)
+plot(res_standard_pca$importance[2,])
+plot(cumsum(res_standard_pca$importance[2,]))
+```
+
+According to the cumulative variance plot, it is clear that PCA does not perform well, as there is no obvious elbow. In other words, it cannot effectively reduce dimensionality.
+
+The reason is that this dataset does not contain an underlying low-dimensional structure.
