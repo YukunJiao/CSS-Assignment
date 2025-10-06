@@ -681,6 +681,8 @@ boot_all <- bind_rows(boot_dem, boot_rep)
 
 # saveRDS(boot_all, file = "boot_all.rds")
 
+boot_all <- readRDS("boot_all.rds")
+
 
 boot_summary <- boot_all |>
   group_by(party, word) |>
@@ -689,13 +691,24 @@ boot_summary <- boot_all |>
             sim_low = quantile(sim, 0.025, na.rm = TRUE),
             sim_high = quantile(sim, 0.975, na.rm = TRUE),
             rank_mean = mean(rank, na.rm = TRUE),
-            .groups = "drop")
+            .groups = "drop") |> 
+  mutate(party = recode(party,
+                        "Republican" = "rep",
+                        "Democrat" = "dem"))
 
 boot_sim_wide <- boot_summary |>
   select(party, word, sim_mean, sim_low, sim_high) |>
-  pivot_wider(names_from = party, values_from = c(sim_mean, sim_low, sim_high))
+  pivot_wider(names_from = party, values_from = c(sim_mean, sim_low, sim_high)) |> 
+  select(word,
+         sim_mean_dem, sim_low_dem, sim_high_dem,
+         sim_mean_rep, sim_low_rep, sim_high_rep)
 
 boot_summary |> kable()
-boot_sim_wide |> kable()
+boot_sim_wide |> 
+  kable(
+    col.names = c("Word", "Mean (Dem)", "Low (Dem)", "High (Dem)", 
+                  "Mean (Rep)", "Low (Rep)", "High (Rep)"),
+    caption = "Bootstrapped Word Similarity for Selected Words Across Parties (Dem = Democrat, Rep = Republican)"
+  )
 ```
 The conclusion is consistent with the above, but we can observe that only russia has a lower bound greater than zero. This indicates that russia is the only word with a significant difference between the two parties, while the differences for the other words are not statistically significant.
