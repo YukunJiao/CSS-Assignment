@@ -1,0 +1,668 @@
+---
+title: "Machine Learning Lab"
+author: "Yukun Jiao"
+date: "2025-09-24"
+toc: false
+format: pdf
+knitr: 
+  opts_chunk:
+    fig.align: center
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+# Lab 5
+
+## Part 1:
+
+### 1.
+
+```{r}
+#| warning: false
+#| message: false
+
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(slam)         # New: needed for perplexity calc
+library(quanteda)     # New: to process text
+library(topicmodels)  # New: to fit topic models
+library(word2vec)     # New: to fit word embeddings
+library(tidyr)
+library(purrr)
+```
+
+
+```{r}
+fb_congress_data <- fread("~/Documents/ML/Labs/Lab5/fb-congress-data3.csv")
+dim(fb_congress_data)
+colnames(fb_congress_data)
+```
+
+The dataset contains 6752 rows and 4 columns.
+The variable names are `doc_id`, `screen_name`, `party`, and `message`.
+
+### 2
+```{r}
+posts_corpus <- corpus(x = fb_congress_data,
+                       text_field = "message",
+                       meta = list("screen_name", "party"),
+                       docid_field = 'doc_id')
+
+# print(posts_corpus)
+
+# Tokenize & clean from particular types of words
+mytokens <- tokens(x = posts_corpus, 
+                   remove_punct = TRUE, 
+                   remove_numbers = TRUE, 
+                   remove_symbols = TRUE,
+                   remove_url = TRUE,
+                   padding = FALSE)
+# print(mytokens)
+
+# Remove English stop words
+mytokens <-   tokens_remove(x = mytokens,
+                            stopwords("en"), 
+                            padding = FALSE)
+# Remove @'s
+mytokens <-   tokens_select(x = mytokens,
+                            selection = 'remove',
+                            valuetype = 'glob', 
+                            pattern = '@', 
+                            padding = FALSE)
+
+# Make tokens lowercase
+mytokens <- tokens_tolower(x = mytokens)
+
+# How does it look now?
+mytokens[1:3]
+```
+
+```{r}
+# Create document term matrix
+dtm <- dfm(x = mytokens)
+dtm
+
+# Exclude words with too low frequency
+dtm <- dfm_trim(dtm, min_termfreq = 5)
+
+# Exclude documents with too low frequency
+rowsums <- rowSums(dtm)
+keep_ids <- which(rowsums>=10)
+dtm <- dtm[keep_ids,]
+
+# Report final dimensionality of data set
+dim(dtm)
+```
+
+### 3. LDA
+
+```{r}
+# Fit LDA (package: topicmodels)
+# - 30 topics
+# - Estimation algorithm: Gibbs
+# - 1000 iterations
+# - Set seed for replicability
+# - Print iter every 1000th (I need the "quiet" model)
+set.seed(1)
+K <- 50
+mylda <- LDA(x = dtm, 
+             k = K, 
+             method="Gibbs",
+             control=list(iter = 1000, 
+                          seed = 1, 
+                          verbose = 0))
+```
+
+### 4.
+```{r}
+
+# Inspect top 15 from each topics
+# get_terms(mylda, 15)
+
+get_terms(mylda, 15)[, c(3, 4, 16, 30, 36)]
+
+# To get a more granular view, extract the probabilities 
+mylda_posterior <- topicmodels::posterior(object = mylda)
+topic_distr_over_words <- mylda_posterior$terms
+topic_distr_over_words_dt <- data.table(topic=1:K, 
+                                        topic_distr_over_words)
+topic_distr_over_words_dt <- melt.data.table(topic_distr_over_words_dt, # If you use base R, you can use reshape's "melt()" function.
+                                             id.vars = 'topic')
+
+
+# Tidyr/Dplyr way of extracting top 15 rows by group
+top10per_topic <- topic_distr_over_words_dt %>% 
+  group_by(topic) %>% 
+  slice_max(order_by = value, n = 15)
+
+# data.table way of extracting top 10 rows by group
+topic_distr_over_words_dt <- topic_distr_over_words_dt[order(value,decreasing = T)]
+top10per_topic <- topic_distr_over_words_dt[,head(.SD,10),by='topic']
+
+# Plot probability over words for a few topics.
+ggplot(top10per_topic[topic %in% c(3, 4, 16, 30, 36)],aes(y=factor(variable),x=value)) + 
+  geom_bar(stat = 'identity', position = 'dodge') + 
+  facet_wrap(~factor(topic,
+                     levels = c(3, 4, 16, 30, 36),
+                     labels = c("national security", "drug", "education", "agriculture", "healthcare system")
+                     ),
+             scales = 'free')
+```
+
+比如topic3涉及美国国防安全
+
+总体来看 大部分主题清晰有意义 有的主题 比如topic 50是junk topic 没有啥意义，因为都是一些无用的词
+
+### 5
+```{r}
+# To validate labeling; identify documents with highest proportion on any given topic
+doc_topic_proportions <- mylda_posterior$topics
+# dim(doc_topic_proportions)
+# head(doc_topic_proportions)
+doc_topic_proportions_dt <- data.table(doc_id = mylda@documents,
+                                       doc_topic_proportions)
+# here I choose topic 3 and topic 36
+
+colnames(doc_topic_proportions_dt)[2:ncol(doc_topic_proportions_dt)] <- paste0('Topic',colnames(doc_topic_proportions_dt)[2:ncol(doc_topic_proportions_dt)]) # Assign topics as column names
+
+topic3doc <- doc_topic_proportions_dt[order(Topic3,decreasing = T)][1:3,]
+topic36doc <- doc_topic_proportions_dt[order(Topic36,decreasing = T)][1:3,]
+
+
+# Select rows from original data...
+# national security
+cat("Top 3 documents for topic 3 are:", topic3doc$doc_id)
+
+# fb_congress_data[doc_id %in% topic3doc$doc_id,]$message
+
+# obamacare
+cat("Top 3 documents for topic 36 are:", topic36doc$doc_id)
+
+# fb_congress_data[doc_id %in% topic36doc$doc_id,]$message
+```
+经过定性阅读，这些文档确实支持了我选择的主题。他们是我预期中的主题内容。
+
+### 6.
+```{r}
+set.seed(1)
+K <- 3
+mylda_3 <- LDA(x = dtm, 
+             k = K, 
+             method="Gibbs",
+             control=list(iter = 1000, 
+                          seed = 1, 
+                          verbose = 0))
+
+# Inspect top 10 from each topics
+get_terms(mylda_3, 10)
+
+# To get a more granular view, extract the probabilities 
+mylda_3_posterior <- topicmodels::posterior(object = mylda_3)
+topic_distr_over_words <- mylda_3_posterior$terms
+topic_distr_over_words_dt <- data.table(topic=1:K, 
+                                        topic_distr_over_words)
+topic_distr_over_words_dt <- melt.data.table(topic_distr_over_words_dt, # If you use base R, you can use reshape's "melt()" function.
+                                             id.vars = 'topic')
+
+
+# Tidyr/Dplyr way of extracting top 15 rows by group
+top10per_topic <- topic_distr_over_words_dt %>% 
+  group_by(topic) %>% 
+  slice_max(order_by = value, n = 15)
+
+# data.table way of extracting top 10 rows by group
+topic_distr_over_words_dt <- topic_distr_over_words_dt[order(value,decreasing = T)]
+top10per_topic <- topic_distr_over_words_dt[,head(.SD,10),by='topic']
+
+# Plot probability over words for a few topics.
+ggplot(top10per_topic[topic %in% 1:3],aes(y=factor(variable),x=value)) + 
+  geom_bar(stat = 'identity', position = 'dodge') + 
+  facet_wrap(~topic,scales = 'free')
+
+# To validate labeling; identify documents with highest proportion on any given topic
+doc_topic_proportions <- mylda_3_posterior$topics
+dim(doc_topic_proportions)
+head(doc_topic_proportions)
+doc_topic_proportions_dt <- data.table(doc_id = mylda_3@documents,
+                                       doc_topic_proportions)
+colnames(doc_topic_proportions_dt)[2:ncol(doc_topic_proportions_dt)] <- paste0('Topic',colnames(doc_topic_proportions_dt)[2:ncol(doc_topic_proportions_dt)]) # Assign topics as column names
+
+topic2doc <- doc_topic_proportions_dt[order(Topic2,decreasing = T)][1:3,]
+topic3doc <- doc_topic_proportions_dt[order(Topic3,decreasing = T)][1:3,]
+
+cat("Top 2 documents for topic 3 are:", topic2doc$doc_id)
+
+cat("Top 3 documents for topic 36 are:", topic3doc$doc_id)
+
+# Select rows from original data...
+fb_congress_data[doc_id==1744,]$message
+fb_congress_data[doc_id==4108,]$message
+
+```
+
+新模型不能很好捕捉到主题
+
+我偏好K=50而不是K=3
+
+### 7.
+
+```{r}
+posterior_results <- posterior(mylda)
+
+theta <- posterior_results$topics
+
+topic_prevalence <- colMeans(theta)
+
+
+cat("The most prevalence is topic", which.max(topic_prevalence))
+
+labeled_topics <- c(1:length(topic_prevalence))
+
+plot_data <- data.frame(
+  topic = paste0("Topic ", labeled_topics),
+  prevalence = topic_prevalence[labeled_topics]
+)
+
+ggplot(plot_data, aes(x = reorder(topic, prevalence), y = prevalence)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(
+    x = "Topic",
+    y = "Avg prevelence",
+    title = "Topic and avg prevelence"
+  ) +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 7))
+
+plot_data_subset <- plot_data[c(3, 4, 16, 30, 36), ]
+
+ggplot(plot_data_subset, aes(x = reorder(topic, prevalence), y = prevalence)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(
+    x = "Topic",
+    y = "Avg prevelence",
+    title = "Topic and avg prevelence"
+  ) +
+  theme_minimal()
+```
+
+最常见的主题是topic 33
+
+```{r}
+party_raw <- docvars(dtm, "party")
+
+K <- ncol(theta)
+colnames(theta) <- paste0("Topic ", 1:K)
+
+theta_df <- as.data.frame(theta) %>%
+  mutate(party = party_raw)
+
+theta_long <- theta_df %>%
+  pivot_longer(cols = starts_with("Topic"),
+               names_to = "topic",
+               values_to = "proportion")
+
+labeled_topics <- paste0("Topic ", c(3, 4, 16, 30, 36))
+
+theta_long_labeled <- theta_long %>% filter(topic %in% labeled_topics)
+
+ggplot(theta_long_labeled,
+       aes(x = topic, y = proportion, fill = party)) +
+  stat_summary(fun = mean, geom = "bar", position = "dodge") +
+  labs(x = "Topic", y = "Mean proportion",
+       title = "Democrats vs Republicans: Topic prevalence") +
+  theme_minimal() +
+  coord_flip()
+```
+
+```{r}
+# glm
+
+glm_topic30 <- glm(`Topic 30` ~ party, family = "quasibinomial", data = theta_df)
+# summary(glm_topic30)$coefficients
+broom::tidy(glm_topic30, exponentiate = TRUE)
+
+glm_results <- lapply(labeled_topics, function(tnm) {
+  frm <- as.formula(paste0("`", tnm, "` ~ party"))
+  fit <- glm(frm, family = "quasibinomial", data = theta_df)
+  broom::tidy(fit, exponentiate = TRUE) |> mutate(topic = tnm)
+}) |> bind_rows()
+
+glm_wide <- glm_results |> 
+  select(topic, term, estimate) |> 
+  pivot_wider(names_from = term, values_from = estimate)
+
+glm_wide
+```
+
+对于主题 3，odds ratio为 1.135，这表明共和党议员发布有关该主题的帖子的可能性比民主党议员高出约 13.5%。相比之下，对于主题 36，odds ratio为 0.850，这意味着共和党议员参与该主题的可能性比民主党议员低约 15%。主题 4 和主题 16 和主题 30 的odds ratio 更接近 1，表明党派差异很小。
+
+
+```{r}
+# t test
+res <- t.test(theta_df[["Topic 3"]] ~ theta_df$party)
+res$p.value
+
+t_results <- lapply(labeled_topics, function(tnm){
+  res <- t.test(theta_df[[tnm]] ~ theta_df$party)
+  data.frame(
+    topic = tnm,
+    p_value = res$p.value,
+    mean_in_Democrat = res$estimate[1],
+    mean_in_Republican = res$estimate[2]
+  )
+}
+  ) |> 
+  bind_rows()
+rownames(t_results) <- NULL
+
+t_results
+```
+
+topic 3和topic 30是共和党更关心的议题 而topic 36是民主党更关心的议题，而topic 4和topic 16没有显著差异
+
+结果说明 两党的主题流行度显著不一致
+
+
+### 8.
+
+```{r}
+set.seed(1984)
+row_ids <- 1:nrow(dtm)
+train_ids <- sample(x = row_ids, size = 0.8*length(row_ids), replace = F)
+test_ids <- row_ids[!row_ids %in% train_ids]
+train_dt <- dtm[train_ids,]
+test_dt <- dtm[-train_ids,]
+
+ks <- c(3, 10, 25, 50, 75, 100, 200)
+perp <- c()
+for(i in 1:length(ks)){
+  current_tm <- LDA(x = train_dt,
+                    k = ks[i], 
+                    method="Gibbs",
+                    control=list(iter = 500, 
+                                 seed = 1, 
+                                 verbose = 0))
+  # Compute perplexity
+  perp[i] <- perplexity(object = current_tm, 
+                        newdata = as.simple_triplet_matrix(test_dt)) # For some reason, perplexity() wants the test data in simple_triplet_matrix format.
+  print(perp)
+}
+plot(x=ks,y=perp)
+```
+
+According to the elbow method, $K = 50$ is the best 因为这是困惑度显著下降的最后一个点，继续增大K并不会显著降低perplexity, 实际中还要考虑50或75或100谁更interpretable再选择。
+
+## Part 2:
+
+### 1.
+```{r}
+fb_congress_data <- fread("~/Documents/ML/Labs/Lab5/fb-congress-data3.csv")
+```
+
+```{r}
+posts_corpus <- corpus(x = fb_congress_data,
+                       text_field = "message",
+                       meta = list("screen_name", "party"),
+                       docid_field = 'doc_id')
+
+# print(posts_corpus)
+
+# Tokenize & clean from particular types of words
+mytokens <- tokens(x = posts_corpus, 
+                   remove_punct = TRUE, 
+                   remove_numbers = TRUE, 
+                   remove_symbols = TRUE,
+                   remove_url = TRUE,
+                   padding = FALSE)
+# print(mytokens)
+
+# Make tokens lowercase
+mytokens <- tokens_tolower(x = mytokens)
+
+# How does it look now?
+mytokens[1:3]
+
+mysentences <- sapply(mytokens, function(x) paste(x, collapse = " "))
+mysentences[1:3]
+```
+
+### 2.
+```{r}
+set.seed(1984)
+w2v <- word2vec(x = mysentences,          # Your data 
+                            type = "cbow",    # Model type (the one we talked about in lecture)
+                            window = 15,       # Context defined in terms of +-5 words.
+                            dim = 50,         # Dimensionality of embeddings
+                            iter = 50,        # Estimation iterations (higher means more time...)
+                            hs = FALSE,       # Setting to FALSE here --> "negative sampling procedure" (learn difference between fake/true sentences)
+                            negative = 15)   # Number of negative samples (how many fake sentences per true sentence)
+
+# w2v_association <- word2vec(x = mysentences,          # Your data 
+#                             type =  "skip-gram",    # Model type (the one we talked about in lecture)
+#                             window = 15,       # Context defined in terms of +-5 words.
+#                             dim = 50,         # Dimensionality of embeddings
+#                             iter = 50,        # Estimation iterations (higher means more time...)
+#                             hs = FALSE,       # Setting to FALSE here --> "negative sampling procedure" (learn difference between fake/true sentences)
+#                             negative = 15)   # Number of negative samples (how many fake sentences per true sentence)
+```
+
+### 3.
+```{r}
+selected_words <- c("russia", "tax", "trump")
+w2v_predict <- predict(w2v, selected_words, type = "nearest", top_n = 10)
+
+w2v_predict
+```
+
+### 4.
+```{r}
+embedding <- as.matrix(w2v)
+
+embedding[rownames(embedding)=="women",]
+
+kingtowoman <- embedding["king", ] - embedding["man", ] + embedding["woman", ]
+sims <- word2vec_similarity(embedding, matrix(kingtowoman, nrow = 1))
+
+head(sort(sims[, 1], decreasing = TRUE), 20)
+
+pretrained <- readRDS("~/Documents/ML/Labs/Lab5/glove6B200d.rds")
+dim(pretrained)
+
+# embedding_pretained <- as.matrix(pretrained) # pretrained is "matrix" "array" 
+# pretrained[rownames(pretrained)=="king",]
+kingtowoman <- pretrained["king", ] - pretrained["man", ] + pretrained["woman", ]
+sims <- word2vec_similarity(pretrained, matrix(kingtowoman, nrow = 1))
+head(sort(sims[, 1], decreasing = TRUE), 20)
+```
+
+```{r}
+dist_vec <- function(a,b) sqrt(sum((a-b)^2))
+dist_sta_man <- dist_vec(pretrained["statistician", ], pretrained["man", ])
+dist_sta_woman <- dist_vec(pretrained["statistician", ], pretrained["woman", ])
+occupationalbias <- dist_sta_man - dist_sta_woman
+occupationalbias
+```
+occupational bias是`r round(occupationalbias, 3)`，表现为statistician在embedding空间中，相比起man距离woman更远，说明存在occupational bias。
+
+
+### 5.
+```{r}
+corpus_dem <- corpus_subset(posts_corpus, party == "Democrat")
+corpus_rep <- corpus_subset(posts_corpus, party == "Republican")
+
+mytokens_dem <- tokens(x = corpus_dem, 
+                   remove_punct = TRUE, 
+                   remove_numbers = TRUE, 
+                   remove_symbols = TRUE,
+                   remove_url = TRUE,
+                   padding = FALSE)
+
+mytokens_rep <- tokens(x = corpus_rep, 
+                   remove_punct = TRUE, 
+                   remove_numbers = TRUE, 
+                   remove_symbols = TRUE,
+                   remove_url = TRUE,
+                   padding = FALSE)
+
+# Make tokens lowercase
+mytokens_dem <- tokens_tolower(x = mytokens_dem)
+mytokens_rep <- tokens_tolower(x = mytokens_rep)
+
+mysentences_dem <- sapply(mytokens_dem, function(x) paste(x, collapse = " "))
+mysentences_rep <- sapply(mytokens_rep, function(x) paste(x, collapse = " "))
+```
+
+```{r}
+set.seed(1984)
+w2v_dem <- word2vec(x = mysentences_dem,          # Your data 
+                            type = "cbow",    # Model type (the one we talked about in lecture)
+                            window = 15,       # Context defined in terms of +-5 words.
+                            dim = 50,         # Dimensionality of embeddings
+                            iter = 50,        # Estimation iterations (higher means more time...)
+                            hs = FALSE,       # Setting to FALSE here --> "negative sampling procedure" (learn difference between fake/true sentences)
+                            negative = 15)   # Number of negative samples (how many fake sentences per true sentence)
+
+w2v_rep <- word2vec(x = mysentences_rep,          # Your data 
+                            type = "cbow",    # Model type (the one we talked about in lecture)
+                            window = 15,       # Context defined in terms of +-5 words.
+                            dim = 50,         # Dimensionality of embeddings
+                            iter = 50,        # Estimation iterations (higher means more time...)
+                            hs = FALSE,       # Setting to FALSE here --> "negative sampling procedure" (learn difference between fake/true sentences)
+                            negative = 15)   # Number of negative samples (how many fake sentences per true sentence)
+```
+
+```{r}
+predict(w2v_dem, c("immigrants", "abortion"), type = "nearest", top_n = 50)
+
+predict(w2v_rep, c("immigrants", "abortion"), type = "nearest", top_n = 50)
+```
+
+### 6
+```{r}
+positive <- fread("~/Documents/ML/Labs/Lab5/positive.txt")[[1]]
+negative <- fread("~/Documents/ML/Labs/Lab5/negative.txt")[[1]]
+selected_words <- c("russia", "tax", "trump")
+```
+
+```{r}
+embeddings_dem <- as.matrix(w2v_dem)
+pos_in_dem <- intersect(positive, rownames(embeddings_dem))
+neg_in_dem <- intersect(negative, rownames(embeddings_dem))
+pos_matrix_dem <- embeddings_dem[pos_in_dem, , drop = FALSE]
+neg_matrix_dem <- embeddings_dem[neg_in_dem, , drop = FALSE]
+pos_vec_dem <- colMeans(pos_matrix_dem)
+neg_vec_dem <- colMeans(neg_matrix_dem)
+
+sentiment_vec_dem <- neg_vec_dem - pos_vec_dem
+sims_dem <- word2vec_similarity(embeddings_dem, sentiment_vec_dem)
+similarity_table_dem <- data.frame(
+  word = rownames(embeddings_dem),
+  sim = as.numeric(sims_dem[, 1])
+)
+sims_dem_filtered <- similarity_table_dem |> 
+  filter(!(word %in% negative)) |> 
+  arrange(desc(sim)) |> 
+  mutate(rank = row_number())
+```
+
+
+```{r}
+embeddings_rep <- as.matrix(w2v_rep)
+pos_in_rep <- intersect(positive, rownames(embeddings_rep))
+neg_in_rep <- intersect(negative, rownames(embeddings_rep))
+pos_matrix_rep <- embeddings_rep[pos_in_rep, , drop = FALSE]
+neg_matrix_rep <- embeddings_rep[neg_in_rep, , drop = FALSE]
+pos_vec_rep <- colMeans(pos_matrix_rep)
+neg_vec_rep <- colMeans(neg_matrix_rep)
+
+sentiment_vec_rep <- neg_vec_rep - pos_vec_rep
+sims_rep <- word2vec_similarity(embeddings_rep, sentiment_vec_rep)
+similarity_table_rep <- data.frame(
+  word = rownames(embeddings_rep),
+  sim = as.numeric(sims_rep[, 1])
+)
+sims_rep_filtered <- similarity_table_rep |> 
+  filter(!(word %in% negative)) |> 
+  arrange(desc(sim)) |> 
+  mutate(rank = row_number())
+```
+
+```{r}
+sims_dem_filtered |> head(10)
+sims_rep_filtered |> head(10)
+
+rank_dem <- sims_dem_filtered |> filter(word %in% selected_words)
+
+rank_rep <- sims_rep_filtered |> filter(word %in% selected_words)
+
+rank_dem
+rank_rep
+```
+
+
+### 7
+```{r}
+fit_and_rank <- function(mysentences, positive_words = postive, negative_words = negative, type = "cbow", window = 15, dim = 50, iter = 50, hs = FALSE, negative = 15){
+  w2v <- word2vec(x = mysentences, type = type, window = window, dim = dim,
+                            iter = iter, hs = hs, negative = negative)
+  emb <- as.matrix(w2v)
+  pos_in <- intersect(positive_words, rownames(emb))
+  neg_in <- intersect(negative_words, rownames(emb))
+  pos_vec <- colMeans(emb[pos_in, , drop = FALSE])
+  neg_vec <- colMeans(emb[neg_in, , drop = FALSE])
+  sentiment_vec <- neg_vec - pos_vec
+  sims <- word2vec_similarity(emb, sentiment_vec)
+  similarity_table <- data.frame(
+  word = rownames(emb),
+  sim = as.numeric(sims[, 1])
+)
+sims_filtered <- similarity_table |> 
+  filter(!(word %in% negative_words)) |> 
+  arrange(desc(sim)) |> 
+  mutate(rank = row_number())
+}
+
+bootstrap_by_party <- function(mysentences, positive_words = positive, negative_words = negative, n_boot = 20, seed = 1984){
+  set.seed(seed)
+  map_dfr(seq_len(n_boot), function(bi) {
+    idx <- sample.int(length(mysentences), replace = TRUE)
+    sent_boot <- mysentences[idx]
+    fit_and_rank(sent_boot, positive_words = positive, negative_words = negative) |>
+      filter(word %in% selected_words) |>
+      mutate(iter = bi)
+  })
+}
+```
+
+```{r}
+# boot_dem <- bootstrap_by_party(mysentences_dem) |> 
+#   mutate(party = "Democrat")
+# boot_rep <- bootstrap_by_party(mysentences_rep) |>
+#   mutate(party = "Republican")
+# 
+# boot_all <- bind_rows(boot_dem, boot_rep)
+# 
+# # saveRDS(boot_all, file = "boot_all.rds")
+# 
+# 
+# boot_summary <- boot_all |> 
+#   group_by(party, word) |> 
+#   summarize(n_iter = n(),
+#             sim_mean = mean(sim, na.rm = TRUE),
+#             sim_low = quantile(sim, 0.025, na.rm = TRUE),
+#             sim_high = quantile(sim, 0.975, na.rm = TRUE),
+#             rank_mean = mean(rank, na.rm = TRUE),
+#             .groups = "drop")
+# 
+# boot_sim_wide <- boot_summary |>
+#   select(party, word, sim_mean, sim_low, sim_high) |>
+#   pivot_wider(names_from = party, values_from = c(sim_mean, sim_low, sim_high))
+# 
+# boot_summary
+# boot_sim_wide
+```
+

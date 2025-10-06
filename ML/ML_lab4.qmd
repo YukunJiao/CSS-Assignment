@@ -272,7 +272,8 @@ for(i in 1:length(penalities)){
                K = 3, 
                type = 'predictor', 
                para = c(rep(penalities[i],ncol(neighborhood_scaled))), 
-               sparse = 'penalty')
+               sparse = 'penalty'
+               )
   spca_pevs[i] <- sum(temp$pev)
   spca_loadings <- temp$loadings
   ps <- length(spca_loadings[abs(spca_loadings)<=0.01]) / length(spca_loadings)
