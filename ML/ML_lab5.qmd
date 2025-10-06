@@ -31,6 +31,8 @@ library(topicmodels)  # New: to fit topic models
 library(word2vec)     # New: to fit word embeddings
 library(tidyr)
 library(purrr)
+library(knitr)
+library(kableExtra)
 ```
 
 
@@ -41,7 +43,7 @@ colnames(fb_congress_data)
 ```
 
 The dataset contains 6752 rows and 4 columns.
-The variable names are `doc_id`, `screen_name`, `party`, and `message`.
+The variable names are: `doc_id`, `screen_name`, `party`, and `message`.
 
 ### 2
 ```{r}
@@ -78,11 +80,11 @@ mytokens <- tokens_tolower(x = mytokens)
 # How does it look now?
 mytokens[1:3]
 ```
+I printed the first three texts for inspection, and I can confirm that the data has been successfully processed into tokens.
 
 ```{r}
 # Create document term matrix
 dtm <- dfm(x = mytokens)
-dtm
 
 # Exclude words with too low frequency
 dtm <- dfm_trim(dtm, min_termfreq = 5)
@@ -95,6 +97,7 @@ dtm <- dtm[keep_ids,]
 # Report final dimensionality of data set
 dim(dtm)
 ```
+The final document-term matrix has dimensions of 5,748 rows (documents) and 5,484 columns (terms).
 
 ### 3. LDA
 
@@ -119,9 +122,9 @@ mylda <- LDA(x = dtm,
 ```{r}
 
 # Inspect top 15 from each topics
-# get_terms(mylda, 15)
+get_terms(mylda, 15)
 
-get_terms(mylda, 15)[, c(3, 4, 16, 30, 36)]
+# get_terms(mylda, 15)[, c(3, 4, 16, 30, 36)]
 
 # To get a more granular view, extract the probabilities 
 mylda_posterior <- topicmodels::posterior(object = mylda)
@@ -141,6 +144,7 @@ top10per_topic <- topic_distr_over_words_dt %>%
 topic_distr_over_words_dt <- topic_distr_over_words_dt[order(value,decreasing = T)]
 top10per_topic <- topic_distr_over_words_dt[,head(.SD,10),by='topic']
 
+topic_name <- c("national security", "drug", "education", "agriculture", "healthcare system")
 # Plot probability over words for a few topics.
 ggplot(top10per_topic[topic %in% c(3, 4, 16, 30, 36)],aes(y=factor(variable),x=value)) + 
   geom_bar(stat = 'identity', position = 'dodge') + 
@@ -151,9 +155,9 @@ ggplot(top10per_topic[topic %in% c(3, 4, 16, 30, 36)],aes(y=factor(variable),x=v
              scales = 'free')
 ```
 
-比如topic3涉及美国国防安全
+After examining the top 15 words for all topics, I selected topics 3, 4, 16, 30, and 36 and provided appropriate labels for each.
 
-总体来看 大部分主题清晰有意义 有的主题 比如topic 50是junk topic 没有啥意义，因为都是一些无用的词
+Overall, most topics are clear and meaningful, but there are some "junk" topics. For example, topic 50 do not convey any meaningful information and mainly consist of irrelevant words.
 
 ### 5
 ```{r}
@@ -182,7 +186,9 @@ cat("Top 3 documents for topic 36 are:", topic36doc$doc_id)
 
 # fb_congress_data[doc_id %in% topic36doc$doc_id,]$message
 ```
-经过定性阅读，这些文档确实支持了我选择的主题。他们是我预期中的主题内容。
+From the topics I labeled, I chose topic 3 and topic 36, which correspond to “national security” and “healthcare system”, respectively.
+
+For each of these two topics, I reported the three documents with the highest topic proportions. After reading them qualitatively, I found that they indeed support the themes I assigned.
 
 ### 6.
 ```{r}
@@ -219,7 +225,10 @@ top10per_topic <- topic_distr_over_words_dt[,head(.SD,10),by='topic']
 # Plot probability over words for a few topics.
 ggplot(top10per_topic[topic %in% 1:3],aes(y=factor(variable),x=value)) + 
   geom_bar(stat = 'identity', position = 'dodge') + 
-  facet_wrap(~topic,scales = 'free')
+  facet_wrap(~factor(topic,
+                     labels = c("nation", "politics", "family")
+                     ),
+             scales = 'free')
 
 # To validate labeling; identify documents with highest proportion on any given topic
 doc_topic_proportions <- mylda_3_posterior$topics
@@ -232,19 +241,19 @@ colnames(doc_topic_proportions_dt)[2:ncol(doc_topic_proportions_dt)] <- paste0('
 topic2doc <- doc_topic_proportions_dt[order(Topic2,decreasing = T)][1:3,]
 topic3doc <- doc_topic_proportions_dt[order(Topic3,decreasing = T)][1:3,]
 
-cat("Top 2 documents for topic 3 are:", topic2doc$doc_id)
+cat("Top 3 documents for topic 2 are:", topic2doc$doc_id)
 
-cat("Top 3 documents for topic 36 are:", topic3doc$doc_id)
+cat("Top 3 documents for topic 3 are:", topic3doc$doc_id)
 
 # Select rows from original data...
-fb_congress_data[doc_id==1744,]$message
-fb_congress_data[doc_id==4108,]$message
+# fb_congress_data[doc_id==1744,]$message
+# fb_congress_data[doc_id==4108,]$message
 
 ```
 
-新模型不能很好捕捉到主题
+Overall, the new model (with $K=3$) does not capture the topics very well.
 
-我偏好K=50而不是K=3
+I prefer $K=50$ over $K=3$ because having only three topics is too coarse and cannot capture the variety and nuances of the different topics discussed.
 
 ### 7.
 
@@ -276,9 +285,12 @@ ggplot(plot_data, aes(x = reorder(topic, prevalence), y = prevalence)) +
   theme_minimal() +
   theme(axis.text.y = element_text(size = 7))
 
-plot_data_subset <- plot_data[c(3, 4, 16, 30, 36), ]
+plot_data_subset <- plot_data[c(3, 4, 16, 30, 36), ] |> 
+  mutate(
+    topic = c(3, 4, 16, 30, 36),
+    topic_label = factor(topic, levels = c(3, 4, 16, 30, 36), labels = topic_name))
 
-ggplot(plot_data_subset, aes(x = reorder(topic, prevalence), y = prevalence)) +
+ggplot(plot_data_subset, aes(x = reorder(topic_label, prevalence), y = prevalence)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   coord_flip() +
   labs(
@@ -289,7 +301,7 @@ ggplot(plot_data_subset, aes(x = reorder(topic, prevalence), y = prevalence)) +
   theme_minimal()
 ```
 
-最常见的主题是topic 33
+The most common topic is topic 33.
 
 ```{r}
 party_raw <- docvars(dtm, "party")
@@ -309,21 +321,32 @@ labeled_topics <- paste0("Topic ", c(3, 4, 16, 30, 36))
 
 theta_long_labeled <- theta_long %>% filter(topic %in% labeled_topics)
 
+mapping <- c(
+  "Topic 3"  = "national security",
+  "Topic 4"  = "drug",
+  "Topic 16" = "education",
+  "Topic 30" = "agriculture",
+  "Topic 36" = "healthcare system"
+)
+
+theta_long_labeled$topic_label <- mapping[theta_long_labeled$topic]
+
 ggplot(theta_long_labeled,
-       aes(x = topic, y = proportion, fill = party)) +
+       aes(x = topic_label, y = proportion, fill = party)) +
   stat_summary(fun = mean, geom = "bar", position = "dodge") +
   labs(x = "Topic", y = "Mean proportion",
        title = "Democrats vs Republicans: Topic prevalence") +
   theme_minimal() +
   coord_flip()
 ```
+From the figure above, we can see that there are clear differences in the prevalence of national security, healthcare system, and agriculture topics between Democrats and Republicans.
 
 ```{r}
 # glm
 
 glm_topic30 <- glm(`Topic 30` ~ party, family = "quasibinomial", data = theta_df)
 # summary(glm_topic30)$coefficients
-broom::tidy(glm_topic30, exponentiate = TRUE)
+# broom::tidy(glm_topic30, exponentiate = TRUE)
 
 glm_results <- lapply(labeled_topics, function(tnm) {
   frm <- as.formula(paste0("`", tnm, "` ~ party"))
@@ -333,18 +356,21 @@ glm_results <- lapply(labeled_topics, function(tnm) {
 
 glm_wide <- glm_results |> 
   select(topic, term, estimate) |> 
-  pivot_wider(names_from = term, values_from = estimate)
+  pivot_wider(names_from = term, values_from = estimate) |> 
+  mutate(topic_label = mapping[topic]) |> 
+  relocate(topic_label, .after = topic)
 
-glm_wide
+glm_wide |> kable()
 ```
 
-对于主题 3，odds ratio为 1.135，这表明共和党议员发布有关该主题的帖子的可能性比民主党议员高出约 13.5%。相比之下，对于主题 36，odds ratio为 0.850，这意味着共和党议员参与该主题的可能性比民主党议员低约 15%。主题 4 和主题 16 和主题 30 的odds ratio 更接近 1，表明党派差异很小。
-
+For topic 3, the odds ratio is 1.135, indicating that Republican members are about 13.5% more likely to post about this topic than Democratic members.
+In contrast, for topic 36, the odds ratio is 0.850, meaning that Republican members are about 15% less likely to engage with this topic compared to Democrats.
+The odds ratios for topics 4, 16, and 30 are closer to 1, suggesting that the party differences for these topics are relatively small.
 
 ```{r}
 # t test
 res <- t.test(theta_df[["Topic 3"]] ~ theta_df$party)
-res$p.value
+# res$p.value
 
 t_results <- lapply(labeled_topics, function(tnm){
   res <- t.test(theta_df[[tnm]] ~ theta_df$party)
@@ -359,12 +385,13 @@ t_results <- lapply(labeled_topics, function(tnm){
   bind_rows()
 rownames(t_results) <- NULL
 
-t_results
+t_results <- t_results |> 
+  mutate(topic_label = mapping[topic]) |> 
+  relocate(topic_label, .after = topic)
+
+t_results |> kable()
 ```
-
-topic 3和topic 30是共和党更关心的议题 而topic 36是民主党更关心的议题，而topic 4和topic 16没有显著差异
-
-结果说明 两党的主题流行度显著不一致
+According to the results of the t-test, topics 3 and 30 are issues that Republicans care more about, while topic 36 is an issue that Democrats care more about. In contrast, there are no significant differences for topics 4 and 16.
 
 
 ### 8.
@@ -394,7 +421,7 @@ for(i in 1:length(ks)){
 plot(x=ks,y=perp)
 ```
 
-According to the elbow method, $K = 50$ is the best 因为这是困惑度显著下降的最后一个点，继续增大K并不会显著降低perplexity, 实际中还要考虑50或75或100谁更interpretable再选择。
+According to the elbow method, $K = 50$ is the best choice because it is the last point where perplexity drops significantly. Increasing K beyond this point does not lead to a substantial decrease in perplexity. In practice, however, one should also consider which value is more interpretable before making the final choice.
 
 ## Part 2:
 
@@ -424,10 +451,10 @@ mytokens <- tokens(x = posts_corpus,
 mytokens <- tokens_tolower(x = mytokens)
 
 # How does it look now?
-mytokens[1:3]
+# mytokens[1:3]
 
 mysentences <- sapply(mytokens, function(x) paste(x, collapse = " "))
-mysentences[1:3]
+# mysentences[1:3]
 ```
 
 ### 2.
@@ -457,6 +484,7 @@ w2v_predict <- predict(w2v, selected_words, type = "nearest", top_n = 10)
 
 w2v_predict
 ```
+The prediction results are relatively consistent with expectations. However, in fact, a model trained using the skip-gram approach would produce results that align even more closely with expectations.
 
 ### 4.
 ```{r}
@@ -486,7 +514,8 @@ dist_sta_woman <- dist_vec(pretrained["statistician", ], pretrained["woman", ])
 occupationalbias <- dist_sta_man - dist_sta_woman
 occupationalbias
 ```
-occupational bias是`r round(occupationalbias, 3)`，表现为statistician在embedding空间中，相比起man距离woman更远，说明存在occupational bias。
+
+The occupational bias is `r round(occupationalbias, 3)`, indicating that "statistician" is farther from "woman" than from "man" in the embedding space, which suggests the presence of occupational bias.
 
 
 ### 5.
@@ -536,10 +565,11 @@ w2v_rep <- word2vec(x = mysentences_rep,          # Your data
 ```
 
 ```{r}
-predict(w2v_dem, c("immigrants", "abortion"), type = "nearest", top_n = 50)
+predict(w2v_dem, c("immigrants", "abortion"), type = "nearest", top_n = 10)
 
-predict(w2v_rep, c("immigrants", "abortion"), type = "nearest", top_n = 50)
+predict(w2v_rep, c("immigrants", "abortion"), type = "nearest", top_n = 10)
 ```
+The results are consistent with expectations. For Republicans, the nearest words to "immigrants" are more negative, while for Democrats, the nearest words are relatively more neutral or positive. The same pattern is observed for "abortion", which reflects the highly conservative beliefs of the Republican Party.
 
 ### 6
 ```{r}
@@ -599,10 +629,13 @@ rank_dem <- sims_dem_filtered |> filter(word %in% selected_words)
 
 rank_rep <- sims_rep_filtered |> filter(word %in% selected_words)
 
-rank_dem
-rank_rep
+rank_dem |> 
+  kable(caption = "Word Rank for Democrats")
+rank_rep |> 
+  kable(caption = "Word Rank for Republicans")
 ```
 
+I selected trump, russia, gun, and tax. For example, we can observe that trump has a lower similarity score on the negative sentiment dimension for Republicans, meaning that trump is relatively less negative. In contrast, trump has a higher similarity score on the negative sentiment dimension for Democrats, indicating that trump is perceived as highly negative.
 
 ### 7
 ```{r}
@@ -639,30 +672,30 @@ bootstrap_by_party <- function(mysentences, positive_words = positive, negative_
 ```
 
 ```{r}
-# boot_dem <- bootstrap_by_party(mysentences_dem) |> 
-#   mutate(party = "Democrat")
-# boot_rep <- bootstrap_by_party(mysentences_rep) |>
-#   mutate(party = "Republican")
-# 
-# boot_all <- bind_rows(boot_dem, boot_rep)
-# 
-# # saveRDS(boot_all, file = "boot_all.rds")
-# 
-# 
-# boot_summary <- boot_all |> 
-#   group_by(party, word) |> 
-#   summarize(n_iter = n(),
-#             sim_mean = mean(sim, na.rm = TRUE),
-#             sim_low = quantile(sim, 0.025, na.rm = TRUE),
-#             sim_high = quantile(sim, 0.975, na.rm = TRUE),
-#             rank_mean = mean(rank, na.rm = TRUE),
-#             .groups = "drop")
-# 
-# boot_sim_wide <- boot_summary |>
-#   select(party, word, sim_mean, sim_low, sim_high) |>
-#   pivot_wider(names_from = party, values_from = c(sim_mean, sim_low, sim_high))
-# 
-# boot_summary
-# boot_sim_wide
-```
+boot_dem <- bootstrap_by_party(mysentences_dem) |>
+  mutate(party = "Democrat")
+boot_rep <- bootstrap_by_party(mysentences_rep) |>
+  mutate(party = "Republican")
 
+boot_all <- bind_rows(boot_dem, boot_rep)
+
+# saveRDS(boot_all, file = "boot_all.rds")
+
+
+boot_summary <- boot_all |>
+  group_by(party, word) |>
+  summarize(n_iter = n(),
+            sim_mean = mean(sim, na.rm = TRUE),
+            sim_low = quantile(sim, 0.025, na.rm = TRUE),
+            sim_high = quantile(sim, 0.975, na.rm = TRUE),
+            rank_mean = mean(rank, na.rm = TRUE),
+            .groups = "drop")
+
+boot_sim_wide <- boot_summary |>
+  select(party, word, sim_mean, sim_low, sim_high) |>
+  pivot_wider(names_from = party, values_from = c(sim_mean, sim_low, sim_high))
+
+boot_summary |> kable()
+boot_sim_wide |> kable()
+```
+The conclusion is consistent with the above, but we can observe that only russia has a lower bound greater than zero. This indicates that russia is the only word with a significant difference between the two parties, while the differences for the other words are not statistically significant.
