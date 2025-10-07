@@ -571,7 +571,7 @@ predict(w2v_rep, c("immigrants", "abortion"), type = "nearest", top_n = 10)
 ```
 The results are consistent with expectations. For Republicans, the nearest words to "immigrants" are more negative, while for Democrats, the nearest words are relatively more neutral or positive. The same pattern is observed for "abortion", which reflects the highly conservative beliefs of the Republican Party.
 
-### 6
+### 6.
 ```{r}
 positive <- fread("~/Documents/ML/Labs/Lab5/positive.txt")[[1]]
 negative <- fread("~/Documents/ML/Labs/Lab5/negative.txt")[[1]]
@@ -637,7 +637,7 @@ rank_rep |>
 
 I selected trump, russia, gun, and tax. For example, we can observe that trump has a lower similarity score on the negative sentiment dimension for Republicans, meaning that trump is relatively less negative. In contrast, trump has a higher similarity score on the negative sentiment dimension for Democrats, indicating that trump is perceived as highly negative.
 
-### 7
+### 7.
 ```{r}
 fit_and_rank <- function(mysentences, positive_words = postive, negative_words = negative, type = "cbow", window = 15, dim = 50, iter = 50, hs = FALSE, negative = 15){
   w2v <- word2vec(x = mysentences, type = type, window = window, dim = dim,
