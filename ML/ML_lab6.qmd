@@ -1,0 +1,443 @@
+---
+title: "Machine Learning Lab"
+author: "Yukun Jiao"
+date: "2025-10-08"
+toc: false
+format: pdf
+knitr: 
+  opts_chunk:
+    fig.align: center
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+# Lab 6
+
+## Part 1:
+
+### 1
+
+```{r}
+#| warning: false
+#| message: false
+
+library(data.table)
+library(randomForest)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(htetree)
+library(grf)
+library(ggplot2)
+library(kableExtra)
+library(broom)
+library(dplyr)
+```
+
+```{r}
+job_training <- fread("~/Documents/ML/Labs/Lab6/job_training_updated.csv")
+dim(job_training)
+covars <- setdiff(colnames(job_training), c("earnings", "training", "skill", "ps", "tau_true"))
+```
+
+```{r}
+ols <- lm(earnings ~ . - skill - ps - tau_true, data = job_training)
+tidy(ols)
+```
+There may be bias in this estimate because participation in the training program is subject to selection effects, and the training variable may also interact with other covariates.
+
+### 2
+```{r}
+set.seed(1984)
+formula_treat <- as.formula(paste("training ~", paste(covars, collapse = " + ")))
+formula_outcome <- as.formula(paste("earnings ~", paste(covars, collapse = " + ")))
+
+dt_m <- rpart(formula_treat, data = job_training, method="class", control = rpart.control(cp=0, minbucket=5, maxdepth=30))
+dt_g <- rpart(formula_outcome, data = job_training, method="anova", control = rpart.control(cp=0, minbucket=5, maxdepth=30))
+
+mhat_in <- predict(dt_m, newdata=as.data.frame(job_training[, ..covars]), type="prob")[,"1"]
+ghat_in <- predict(dt_g, newdata=as.data.frame(job_training[, ..covars]))
+job_training[, `:=`(X_tilde_in = training - mhat_in, Y_tilde_in = earnings - ghat_in)]
+orth_dt <- lm(Y_tilde_in ~ X_tilde_in, data=job_training)
+tidy(orth_dt)
+```
+
+The estimated ATE from the orthogonal learner is 9.72, which is substantially smaller than the OLS estimate of 24.86. This suggests the presence of positive selection bias, where individuals with higher earnings potential are more likely to participate in the training program, leading OLS to overestimate the true treatment effect. I therefore trust the orthogonal learner more, as it accounts for confounding more effectively. However, its estimate may still be biased due to potential overfitting of the machine learning models or the omission of important covariates.
+
+### 3
+
+Using a random forest instead of a decision tree may improve the ATE estimate, as random forests generally reduce variance in predictions. However, this can come at the cost of increased bias.
+
+Adding cross-fitting can further mitigate overfitting and thus improve the accuracy and robustness of the ATE estimation.
+
+### 4
+
+```{r}
+#| warning: false
+#| message: false
+set.seed(1984)
+folds <- caret::createFolds(job_training$training, k=5, returnTrain=FALSE)
+xhat_oof <- yhat_oof <- rep(NA_real_, nrow(job_training))
+for (i in seq_along(folds)) {
+  te <- folds[[i]]; tr <- setdiff(seq_len(nrow(job_training)), te)
+  rf_m <- randomForest(x=as.data.frame(job_training[, ..covars]), y=as.factor(job_training$training), ntree=250, mtry=2)
+  rf_g <- randomForest(x=as.data.frame(job_training[, ..covars]), y=job_training$earnings, ntree=250, mtry=2)
+  xhat_oof[te] <- predict(rf_m, newdata=as.data.frame(job_training[, ..covars]), type="prob")[,"1"]
+  yhat_oof[te] <- predict(rf_g, newdata=as.data.frame(job_training[, ..covars]))
+}
+job_training[, `:=`(X_tilde = training - xhat_oof, Y_tilde = earnings - yhat_oof)]
+orth_rf <- lm(Y_tilde ~ X_tilde, data=job_training)
+print(summary(orth_rf)$coef["X_tilde", , drop=FALSE])
+```
+
+The ATE estimated by the random forest model is 33.45, which should be more stable and robust from a modeling perspective, but it appears to be substantially overestimated.
+
+### 5
+In this case, the ATE estimated by the decision tree is closer to the true value, likely because the uneven distribution of propensity scores in the sample has affected the random forest estimation.
+
+## Part 2:
+### 1
+```{r}
+scholarship_dt <- fread("~/Documents/ML/Labs/Lab6/scholarship.csv")
+dim(scholarship_dt)
+covars <- setdiff(colnames(scholarship_dt), c("scholarship", "completed", "ps", "tau_true"))
+```
+
+```{r}
+ols <- lm(completed ~ . + first_generation*scholarship + financial_need*scholarship - ps - tau_true, data = scholarship_dt)
+tidy(summary(ols))
+```
+
+The results are consistent with the existing literature, indicating significant heterogeneity in the effect of the scholarship.
+The interaction term scholarship:first_generation shows a relatively large moderating effect (0.191), while scholarship:financial_need has a smaller effect (0.0019).
+
+### 2
+Examining interaction terms relies on pre-specified forms of heterogeneity and assumes linear relationships, making it unsuitable for exploring unknown or nonlinear patterns of treatment effect heterogeneity.
+
+
+### 3
+Traditional methods require pre-specifying the form of heterogeneity in the model,
+whereas causal trees can capture complex nonlinear heterogeneity and automatically identify subgroups with different treatment effects.
+
+
+### 4
+```{r}
+ct <- causalTree(
+  completed ~ scholarship + gpa + parental_income + first_generation + sat_score + distance_to_college + financial_need,
+  data      = as.data.frame(scholarship_dt),
+  treatment = scholarship_dt$scholarship, 
+  split.Rule = "CT",
+  cv.option = "CT",
+  split.Honest = TRUE,
+  split.Bucket = TRUE,
+  minsize = 60,
+  cp = 0,
+  bucketNum = 40
+)
+```
+
+```{r}
+#| warning: false
+#| message: false
+# Visualize
+rpart.plot::rpart.plot(ct, type=2, extra=101, under=TRUE, fallen.leaves=TRUE,
+                       tweak=1.0, main="Causal Tree (pruned)")
+```
+
+```{r}
+vars <- c("gpa", "parental_income", "first_generation",
+          "sat_score", "distance_to_college", "financial_need")
+
+scholarship_dt$leaf <- factor(ct$where)
+
+leaf_effects <- unique(data.frame(
+  leaf = ct$where,
+  effect = predict(ct)
+))
+
+max_leaf <- leaf_effects[which.max(leaf_effects$effect), "leaf"]
+min_leaf <- leaf_effects[which.min(leaf_effects$effect), "leaf"]
+
+leaf_profile <- scholarship_dt[, lapply(.SD, mean, na.rm = TRUE),
+                   by = leaf, .SDcols = vars]
+
+leaf_profile[leaf == max_leaf] |> kable()
+
+leaf_profile[leaf == min_leaf] |> kable()
+```
+
+The group with the largest treatment effect (leaf 121) consists of students with moderate parental income, relatively high SAT scores, and average financial need, indicating that scholarships are particularly effective for academically stronger students with moderate resources.
+
+The smallest treatment effect (leaf 16) is found among students with high parental income, lower SAT scores, and low financial need, suggesting that scholarships have little impact for financially secure students.
+
+The causal tree is sensitive to noise data, and imbalance or residual confounding may still exist within the leaves, potentially biasing the estimated treatment effects.
+
+### 5
+```{r}
+ps_model <- glm(
+  scholarship ~ gpa + parental_income + first_generation +
+                sat_score + distance_to_college + financial_need,
+  data = scholarship_dt,
+  family = binomial()
+)
+
+scholarship_dt$ps_hat <- as.numeric(predict(ps_model, type = "response"))
+```
+
+```{r}
+scholarship_dt$leaf <- factor(ct$where)
+
+leaf_group_long <- scholarship_dt[, .(
+n = .N,
+  mean_ps = mean(ps_hat),
+sd_ps = sd(ps_hat)
+), by = .(leaf, scholarship)]
+
+leaf_group_stats <- data.table::dcast(
+leaf_group_long,
+leaf~ scholarship,
+value.var = c("n", "mean_ps", "sd_ps"),
+fill = NA_real_
+)
+```
+
+```{r}
+leaf_balance <- copy(leaf_group_stats)[
+  ,
+  SMD_ps := {
+    denom <- sqrt((sd_ps_1^2 + sd_ps_0^2)/2)
+    ifelse(is.finite(denom) & denom > 0,
+           abs(mean_ps_1 - mean_ps_0) / denom, NA_real_)
+  }
+][order(-SMD_ps)]
+
+
+head(leaf_balance)
+```
+
+```{r}
+ggplot(leaf_balance, aes(x = reorder(leaf, SMD_ps), y = SMD_ps)) +
+  geom_col() +
+  coord_flip() +
+  geom_hline(yintercept = 0.1, linetype = "dashed", color = "red") +
+  labs(title = "Balance Check by Leaf",
+       y = "Standardized Mean Difference (SMD)",
+       x = "Leaf ID")
+```
+The SMD of propensity score across all leaves exceed 0.25, and the vast majority are above 0.5, indicating severe imbalance between treated and control units within leaves.
+This suggests that the causal estimates derived from the unweighted causal tree are not causally credible, as the treatment and control groups are not comparable even within the same leaf.
+
+
+### 6
+```{r}
+scholarship_dt$w_ipw <- ifelse(
+  test = scholarship_dt$scholarship == 1,
+  yes  = 1 / pmax(scholarship_dt$ps_hat, 0.02),
+  no   = 1 / pmax(1 - scholarship_dt$ps_hat, 0.02)
+)
+
+ct_ipw <- causalTree(
+  completed ~ scholarship + gpa + parental_income + first_generation + sat_score + distance_to_college + financial_need,
+  data = as.data.frame(scholarship_dt),
+  weights = scholarship_dt$w_ipw,
+  treatment = scholarship_dt$scholarship, 
+  split.Rule = "CT",
+  cv.option = "CT",
+  split.Honest = TRUE,
+  split.Bucket = TRUE,
+  minsize = 60,
+  cp = 0,
+  bucketNum = 40
+)
+```
+
+```{r}
+scholarship_dt$leaf <- factor(ct_ipw$where)
+
+leaf_group_long <- scholarship_dt[, .(
+n = .N,
+  mean_ps = mean(ps_hat),
+sd_ps = sd(ps_hat)
+), by = .(leaf, scholarship)]
+
+leaf_group_stats <- data.table::dcast(
+leaf_group_long,
+leaf~ scholarship,
+value.var = c("n", "mean_ps", "sd_ps"),
+fill = NA_real_
+)
+```
+
+```{r}
+leaf_balance <- copy(leaf_group_stats)[
+  ,
+  SMD_ps := {
+    denom <- sqrt((sd_ps_1^2 + sd_ps_0^2)/2)
+    ifelse(is.finite(denom) & denom > 0,
+           abs(mean_ps_1 - mean_ps_0) / denom, NA_real_)
+  }
+][order(-SMD_ps)]
+
+
+print(leaf_balance)
+```
+
+```{r}
+ggplot(leaf_balance, aes(x = reorder(leaf, SMD_ps), y = SMD_ps)) +
+  geom_col() +
+  coord_flip() +
+  geom_hline(yintercept = 0.1, linetype = "dashed", color = "red") +
+  labs(title = "Balance Check by Leaf",
+       y = "Standardized Mean Difference (SMD)",
+       x = "Leaf ID")
+
+```
+
+Some leaves show SMD values below 0.5, indicating that inverse probability weighting has improved the balance between treated and control groups.
+
+
+```{r}
+#| warning: false
+#| message: false
+rpart.plot::rpart.plot(ct_ipw, type=2, extra=101, under=TRUE, fallen.leaves=TRUE,
+                       tweak=1.0, main="Causal Tree (pruned)")
+```
+
+The splitting structure of the new tree differs substantially from the previous one, and the overall depth has increased. Considering the original treatment assignment bias, this suggests that the earlier results are not reliable.
+
+```{r}
+vars <- c("gpa", "parental_income", "first_generation",
+          "sat_score", "distance_to_college", "financial_need")
+
+leaf_effects <- unique(data.frame(
+  leaf = ct_ipw$where,
+  effect = predict(ct_ipw)
+))
+
+max_leaf <- leaf_effects[which.max(leaf_effects$effect), "leaf"]
+min_leaf <- leaf_effects[which.min(leaf_effects$effect), "leaf"]
+
+leaf_profile <- scholarship_dt[, lapply(.SD, mean, na.rm = TRUE),
+                   by = leaf, .SDcols = vars]
+
+leaf_profile[leaf == max_leaf] |> kable()
+
+leaf_profile[leaf == min_leaf] |> kable()
+```
+
+The smallest estimated treatment effect (leaf 22) is found among students with stronger academic and socioeconomic backgrounds (higher GPAs and SAT scores), higher parental income, lower financial need, and few first-generation students. Scholarships have little influence on their degree completion.
+
+The largest treatment effect (leaf 172) appears among students with high financial need, lower income and academic scores, and many first-generation students. For these students, scholarships significantly increase the likelihood of completing their degrees.
+
+These results are consistent with the previous analysis, again highlighting two key moderating variables. However, the causal tree model also identifies additional sources of heterogeneity, such as parental income and academic preparation, which were not pre-specified. I, or we, should encourage our co-author to consider incorporating these newly identified effects when specifying models that require pre-defined forms of heterogeneity.
+
+## Part 3:
+### 1
+
+Because there is an orthogonal learner before learning the trees in causal forests to erase these treatment assignment bias produced by covariates.
+
+### 2
+```{r}
+#| warning: false
+#| message: false
+set.seed(1984)
+X <- as.matrix(scholarship_dt[, .(gpa,
+                                  parental_income,
+                                  first_generation,
+                                  sat_score,
+                                  distance_to_college,
+                                  financial_need)])
+Y <- scholarship_dt$completed
+W <- scholarship_dt$scholarship
+
+cf <- causal_forest(X, Y, W, num.trees = 2000, honesty = TRUE)
+
+average_treatment_effect(cf, target.sample = "all") |> kable()
+```
+
+The estimated average treatment effect (ATE) from the causal forest is 0.115.
+
+```{r}
+# Variable importance
+vi <- variable_importance(cf)
+var_imp_dt <- data.table(var=colnames(X), 
+                         importance=as.numeric(vi))
+print(head(var_imp_dt[order(-importance)], 8))
+
+ggplot(var_imp_dt, aes(x = reorder(var, importance), y = importance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Variable Importance in Explaining Treatment Effect Heterogeneity",
+       x = "Variable",
+       y = "Importance Score") +
+  theme_minimal()
+```
+
+The variable importance results show that first_generation is by far the most influential factor in explaining treatment effect heterogeneity, followed by SAT score, GPA, and financial_need.
+This pattern is consistent with the causal tree findings, where first_generation and financial_need also appeared as key moderators.
+Overall, both methods highlight that scholarships have the largest impact among first-generation and high-need students.
+
+
+
+```{r}
+#| warning: false
+#| message: false
+scholarship_dt[, sat_quint := cut(sat_score,
+                                  breaks = quantile(sat_score, probs = seq(0, 1, 0.2), na.rm = TRUE),
+                                  include.lowest = TRUE,
+                                  labels = paste0("Q", 1:5))]
+sat_effects <- list()
+for (q in unique(scholarship_dt$sat_quint)) {
+  subset_idx <- which(scholarship_dt$sat_quint == q)
+  ate_q <- average_treatment_effect(cf, subset = subset_idx)
+  sat_effects[[q]] <- data.table(
+    sat_quint = q,
+    cate = ate_q[1],
+    se = ate_q[2]
+  )
+}
+
+sat_effects_dt <- rbindlist(sat_effects)
+
+# Plot
+ggplot(sat_effects_dt, aes(x = sat_quint, y = cate)) +
+  geom_point(size = 3, color = "steelblue") +
+  geom_errorbar(aes(ymin = cate - 2*se, ymax = cate + 2*se), width = 0.2) +
+  labs(title = "CATE by SAT Score Quintiles",
+       x = "SAT Score Quintile",
+       y = "Estimated Treatment Effect (CATE)") +
+  theme_minimal()
+```
+
+```{r}
+#| warning: false
+#| message: false
+firstgen_effects <- list()
+
+for (g in 0:1) {
+  subset_idx <- which(scholarship_dt$first_generation == g)
+  ate_g <- average_treatment_effect(cf, subset = subset_idx)
+  firstgen_effects[[as.character(g)]] <- data.table(
+    first_gen = g,
+    cate = ate_g[1],
+    se = ate_g[2]
+  )
+}
+
+firstgen_effects_dt <- rbindlist(firstgen_effects)
+
+ggplot(firstgen_effects_dt, aes(x = factor(first_gen), y = cate, fill = factor(first_gen))) +
+  geom_col() +
+  geom_errorbar(aes(ymin = cate - 2*se, ymax = cate + 2*se), width = 0.1) +
+  labs(title = "CATE by First-Generation Status",
+       x = "First-generation (0 = No, 1 = Yes)",
+       y = "Estimated Treatment Effect (CATE)") +
+  theme_minimal() +
+  scale_fill_manual(values = c("skyblue", "steelblue"))
+```
+
+The treatment effect varies strongly by first-generation status and moderately by SAT score.
+First-generation students show a much larger effect (0.26) compared to non–first-generation students (0.04), indicating that scholarships benefit disadvantaged students the most.
+Across SAT quintiles, the effect increases from 0.07 in Q1 (lowest scores) to 0.17 in Q5 (highest scores), suggesting a positive relationship between academic preparation and scholarship impact.
+These results are consistent with the causal tree findings but provide more detailed, continuous evidence of heterogeneity in treatment effects.
