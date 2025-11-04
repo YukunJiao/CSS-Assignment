@@ -1,0 +1,475 @@
+---
+title: "Inequality and Segregation Lab 1"
+author: "Yukun Jiao"
+date: "2025-10-27"
+toc: false
+format:
+  pdf
+knitr: 
+  opts_chunk:
+    fig.align: center
+editor: 
+  markdown: 
+    wrap: 72
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+This report investigates the differences between Sweden and Hungary in their Lorenz curves, Gini coefficients, and the variance decompositions of income, then provides a preliminary analysis of the results. The results indicate that Sweden's income distribution is more equal. The variance decomposition further highlights two distinct patterns.
+
+# Part 1
+```{r}
+library(kableExtra)
+library(wid)
+library(ineq)
+```
+
+```{r}
+# wid_data <- download_wid(
+#   indicators = "aptinc",
+#   areas = "SE",
+#   years = "2022",  
+#   perc = "all",
+#   ages = "all",
+#   pop = "all",
+#   metadata = FALSE,
+#   include_extrapolations = TRUE,
+#   verbose = TRUE
+# )
+
+# saveRDS(wid_data, file = "wid_data.RDS")
+wid_data <- readRDS("wid_data.RDS")
+
+pattern <- "^p(\\d{1,2})p(\\d{1,2})$"
+
+# Use grepl with an additional condition to check that the difference between the two numbers is exactly 1
+filtered_df <- wid_data[grepl(pattern, wid_data$percentile) & 
+                          as.numeric(sub("p(\\d{1,2})p(\\d{1,2})", "\\2", wid_data$percentile)) -
+                          as.numeric(sub("p(\\d{1,2})p(\\d{1,2})", "\\1", wid_data$percentile)) == 1, ]
+
+
+#### Calculate Gini:
+
+# Step 1: Sort by income and create the rank (R) variable
+filtered_df <- filtered_df[order(filtered_df$value), ]
+filtered_df$rank <- seq_along(filtered_df$value) / nrow(filtered_df)
+
+# Step 2: Calculate the mean of the income values (x̄)
+mean_income <- mean(filtered_df$value)
+
+# Step 3: Calculate the covariance between income and rank
+covar <- cov(filtered_df$value, filtered_df$rank)
+
+# Step 4: Calculate the Gini coefficient using the formula
+gini_coefficient_formula <- 2/mean_income * covar
+# 
+# # Print the Gini coefficient
+# print(gini_coefficient)
+
+# Calculate the Gini coefficient using the ineq::Gini function
+gini_coefficient <- ineq::Gini(filtered_df$value)
+
+# Display the Gini coefficient
+# print(gini_coefficient)
+```
+
+
+```{r}
+# wid_data_cn <-download_wid(
+#   indicators = "aptinc",
+#   areas = "HU",
+#   years = "2022",
+#   perc = "all",
+#   ages = "all",
+#   pop = "all",
+#   metadata = FALSE,
+#   include_extrapolations = TRUE,
+#   verbose = TRUE
+# )
+
+# saveRDS(wid_data_cn, file = "wid_data_cn.RDS")
+wid_data_cn <- readRDS("wid_data_cn.RDS")
+
+pattern <- "^p(\\d{1,2})p(\\d{1,2})$"
+
+# Use grepl with an additional condition to check that the difference between the two numbers is exactly 1
+filtered_df_cn <- wid_data_cn[grepl(pattern, wid_data_cn$percentile) & 
+                          as.numeric(sub("p(\\d{1,2})p(\\d{1,2})", "\\2", wid_data_cn$percentile)) -
+                          as.numeric(sub("p(\\d{1,2})p(\\d{1,2})", "\\1", wid_data_cn$percentile)) == 1, ]
+
+lorenz_curve <- ineq::Lc(filtered_df$value)
+
+lorenz_curve_cn <- ineq::Lc(filtered_df_cn$value)
+
+
+
+#### Calculate Gini:
+
+# Step 1: Sort by income and create the rank (R) variable
+filtered_df_cn <- filtered_df_cn[order(filtered_df_cn$value), ]
+filtered_df_cn$rank <- seq_along(filtered_df_cn$value) / nrow(filtered_df_cn)
+
+# Step 2: Calculate the mean of the income values (x̄)
+mean_income <- mean(filtered_df_cn$value)
+
+# Step 3: Calculate the covariance between income and rank
+covar <- cov(filtered_df_cn$value, filtered_df_cn$rank)
+
+# Step 4: Calculate the Gini coefficient using the formula
+gini_coefficient_cn_formula <- 2/mean_income * covar
+# 
+# # Print the Gini coefficient
+# print(gini_coefficient)
+
+# Calculate the Gini coefficient using the ineq::Gini function
+gini_coefficient_cn <- ineq::Gini(filtered_df_cn$value)
+
+# Display the Gini coefficient
+# print(gini_coefficient)
+```
+
+```{r}
+#| label: fig-lorenz
+#| fig-cap: "Lorenz curves for Sweden and Hungary"
+#| fig-width: 5
+#| fig-height: 3.9
+#| fig-pos: H
+## Graph Lorenz Curve:
+
+plot(lorenz_curve,
+     main = "Lorenz Curve",
+     xlab = "Cumulative Share of Population",
+     ylab = "Cumulative Share of Income",
+     col = "blue", lwd = 2)
+
+lines(lorenz_curve_cn, col = "red", lwd = 2)
+
+legend("topleft",
+       legend = c("Sweden", "Hungary", "Perfect equality"),
+       col    = c("blue", "red", par("col")),
+       lty    = c(1,     1,      1),
+       lwd    = c(2,     2,      par("lwd")),
+       bty = "n")
+```
+
+As shown in @fig-lorenz, the Lorenz curves for Sweden and Hungary indicate that Sweden's curve is closer to the perfect equality line than Hungary's, implying a more equal distribution in Sweden.
+
+```{r}
+#| label: tbl-gini
+#| tbl-cap: "Gini coefficients for Sweden and Hungary"
+#| echo: false
+#| tbl-pos: H
+
+
+library(dplyr)
+library(gt)
+
+gini_tbl <- tibble::tibble(
+  Country = c("Sweden", "Hungary"),
+  Gini_ineq   = c(gini_coefficient, gini_coefficient_cn),
+  Gini_formula = c(gini_coefficient_formula, gini_coefficient_cn_formula)
+)
+
+gini_tbl |>
+  gt() |>
+  fmt_number(columns = c(Gini_ineq, Gini_formula), decimals = 3) |>
+  cols_label(Country = "Country", Gini_ineq = "Gini - Ineq", Gini_formula = "Gini - formula") |> 
+  cols_align(align = "center", columns = everything()) |>
+  cols_width(
+    Country ~ px(120),
+    Gini_ineq    ~ px(140),
+    Gini_formula ~ px(140)
+  ) |> 
+  tab_options(
+    table.width = px(400),
+    table.align = "center",
+    data_row.padding = px(4),
+    column_labels.padding = px(6)
+  )
+```
+
+As reported in @tbl-gini, the Gini coefficient calculated by _Ineq_ package of Sweden is 0.364, slightly lower than Hungary's (0.383). This indicates that Sweden is more income-equal than Hungary.
+
+However, the Gini coefficients computed via the formula and via the _Ineq_ package differ slightly. The formula-based calculation uses the sample covariance, which tends to be a bit larger, whereas the _Ineq_ package uses the population covariance, applying an $(n-1)/n$ adjustment to the formula-based result.
+
+# Part 2
+
+I pair Sweden with Hungary because Hungary is an interesting outlier among European countries---sometimes characterized as an "electoral autocracy,"[^1] suggesting distinctive institutional features. This contrast offers a useful case for assessing how intergenerational income elasticity differs across institutional contexts.
+
+[^1]: https://www.europarl.europa.eu/news/en/press-room/20220909IPR40137
+
+Based on $y_i=\alpha+\beta x+\delta z+\varepsilon$, I then decompose the variance of $y$ into components of $x$, $z$, and their covariance.
+
+```{r}
+#| results: hide
+# Load necessary libraries
+library(haven)
+library(dplyr)
+
+ess <- read_dta("~/Documents/IS/Lab 1/ESS9e03_2.dta")
+
+# Filter for Sweden (SE) only
+ess_se <- ess %>% filter(cntry == "SE")
+
+# Convert eduyrs and edulvlb to numeric, coercing strings to NA
+ess_se <- ess_se %>%
+  mutate(
+    eduyrs = as.numeric(eduyrs),
+    edulvlb = as.numeric(edulvlb)
+  )
+
+# Filter out rows with NA values in eduyrs or edulvlb (including those that were strings)
+ess_se_complete <- ess_se %>% filter(!is.na(eduyrs) & !is.na(edulvlb))
+
+# Run the regression on the filtered dataset
+model_edu <- lm(eduyrs ~ factor(edulvlb), data = ess_se_complete)
+
+# Predict Eduyears for the filtered dataset
+ess_se_complete <- ess_se_complete %>% mutate(Eduyears = predict(model_edu))
+
+# Preserve the mapping: rename Eduyears to FatherEduyears
+father_mapping <- ess_se_complete %>% 
+  select(edulvlb, Eduyears) %>%
+  rename(FatherEduyears = Eduyears, edulvlfb = edulvlb) %>%
+  distinct()
+
+# Merge the father education years into the main dataset based on edulvlfb
+ess_se <- ess_se %>%
+  left_join(father_mapping, by = c("edulvlfb" = "edulvlfb"))
+
+# hinctnta <- log(hinctnta)
+
+# Run the regression: hinctnta on eduyrs and FatherEduyears
+model <- lm(hinctnta ~ eduyrs + FatherEduyears, data = ess_se)
+
+# Results of regression:
+summary(model)
+
+# Extract coefficients
+b_eduyrs <- coef(model)["eduyrs"]
+b_FatherEduyears <- coef(model)["FatherEduyears"]
+
+# Predict Residuals
+#ess_se <- ess_se %>% mutate(Residuals = residuals(model))
+
+# Calculate standard deviations
+sd_eduyrs <- sd(ess_se$eduyrs, na.rm = TRUE)
+sd_FatherEduyears <- sd(ess_se$FatherEduyears, na.rm = TRUE)
+#sd_Residual <- sd(ess_se$Residuals, na.rm = TRUE)
+
+# Calculate covariance between eduyrs and FatherEduyears
+cov_eduyrs_FatherEduyears <- cov(ess_se$eduyrs, ess_se$FatherEduyears, use = "complete.obs")
+
+# Calibration calculation
+Calibration <- b_eduyrs^2 * sd_eduyrs^2 + 
+  b_FatherEduyears^2 * sd_FatherEduyears^2 + 
+  2 * b_eduyrs * b_FatherEduyears * cov_eduyrs_FatherEduyears
+
+# Calculate the actual variance of hinctnta
+sd_hinctnta <- sd(ess_se$hinctnta, na.rm = TRUE)
+var_hinctnta <- sd_hinctnta^2
+
+VarE_eduyrs <- b_eduyrs^2 * sd_eduyrs^2
+VarE_FatherEduyears <- b_FatherEduyears^2 * sd_FatherEduyears^2
+VarE_Cov <- 2 * b_eduyrs * b_FatherEduyears * cov_eduyrs_FatherEduyears
+
+Calibration_r2 <- Calibration/var_hinctnta
+```
+
+```{r}
+#| label: tbl-var-decomp-se
+#| tbl-cap: "Variance decomposition results (Sweden)"
+#| tbl-pos: H
+#| echo: false
+
+library(dplyr)
+library(gt)
+
+var_decomp_tbl <- tibble::tibble(
+  Component = c(
+    "Calibration",
+    "Household income",
+    "Years of education",
+    "Father's years of education",
+    "Covariance term"
+  ),
+  Value = c(
+    Calibration,
+    var_hinctnta,
+    VarE_eduyrs,
+    VarE_FatherEduyears,
+    VarE_Cov
+  )
+)
+
+var_decomp_share_tbl <- var_decomp_tbl |>
+  mutate(Share = ifelse(Component == "Calibration", NA_real_, Value / var_hinctnta)) |>
+  filter(Component != "Calibration")
+
+var_decomp_share_tbl |>
+  gt() |>
+  fmt_markdown(columns = Component) |>
+  fmt_number(columns = c(Value), decimals = 3) |>
+  fmt_percent(columns = Share, decimals = 1) |>
+  cols_label(
+    Component = "Component",
+    Value     = "Value",
+    Share     = "Share of Total"
+  ) |>
+  cols_align(align = "center", columns = everything()) |>
+  cols_width(
+    Component ~ px(280),
+    Value     ~ px(160),
+    Share     ~ px(160)
+  ) |>
+  tab_options(
+    table.width = px(620),
+    table.align = "center",
+    data_row.padding = px(4),
+    column_labels.padding = px(6)
+  ) |> 
+  tab_source_note(
+    md(sprintf("Calibration of $\\mathrm{R}^{2}$: %.3f", Calibration_r2))
+  )
+```
+As shown in @tbl-var-decomp-se and @tbl-var-decomp-hu, the variance decompositions of income inequality in Sweden and Hungary differ markedly. In Sweden, years of education accounts for 8.4% of the variance in household income, father's education accounts for 0.9%, and the covariance term accounts for 1.9%. In Hungary, the respective shares are 4.1%, 4.7%, and 4.0%. These patterns indicate that individual's years of education is the dominant observed factor in Sweden, whereas in Hungary father's years of education and the covariance between individual's education and father's education account for a large share.
+```{r}
+#| results: hide
+# Load necessary libraries
+library(haven)
+library(dplyr)
+
+ess <- read_dta("~/Documents/IS/Lab 1/ESS9e03_2.dta")
+
+# Filter for Sweden (SE) only
+ess_se <- ess %>% filter(cntry == "HU")
+
+# Convert eduyrs and edulvlb to numeric, coercing strings to NA
+ess_se <- ess_se %>%
+  mutate(
+    eduyrs = as.numeric(eduyrs),
+    edulvlb = as.numeric(edulvlb)
+  )
+
+# Filter out rows with NA values in eduyrs or edulvlb (including those that were strings)
+ess_se_complete <- ess_se %>% filter(!is.na(eduyrs) & !is.na(edulvlb))
+
+# Run the regression on the filtered dataset
+model_edu <- lm(eduyrs ~ factor(edulvlb), data = ess_se_complete)
+
+# Predict Eduyears for the filtered dataset
+ess_se_complete <- ess_se_complete %>% mutate(Eduyears = predict(model_edu))
+
+# Preserve the mapping: rename Eduyears to FatherEduyears
+father_mapping <- ess_se_complete %>% 
+  select(edulvlb, Eduyears) %>%
+  rename(FatherEduyears = Eduyears, edulvlfb = edulvlb) %>%
+  distinct()
+
+# Merge the father education years into the main dataset based on edulvlfb
+ess_se <- ess_se %>%
+  left_join(father_mapping, by = c("edulvlfb" = "edulvlfb"))
+
+# hinctnta <- log(hinctnta)
+
+# Run the regression: hinctnta on eduyrs and FatherEduyears
+model <- lm(hinctnta ~ eduyrs + FatherEduyears, data = ess_se)
+
+# Results of regression:
+summary(model)
+
+# Extract coefficients
+b_eduyrs <- coef(model)["eduyrs"]
+b_FatherEduyears <- coef(model)["FatherEduyears"]
+
+# Predict Residuals
+#ess_se <- ess_se %>% mutate(Residuals = residuals(model))
+
+# Calculate standard deviations
+sd_eduyrs <- sd(ess_se$eduyrs, na.rm = TRUE)
+sd_FatherEduyears <- sd(ess_se$FatherEduyears, na.rm = TRUE)
+#sd_Residual <- sd(ess_se$Residuals, na.rm = TRUE)
+
+# Calculate covariance between eduyrs and FatherEduyears
+cov_eduyrs_FatherEduyears <- cov(ess_se$eduyrs, ess_se$FatherEduyears, use = "complete.obs")
+
+# Calibration calculation
+Calibration <- b_eduyrs^2 * sd_eduyrs^2 + 
+  b_FatherEduyears^2 * sd_FatherEduyears^2 + 
+  2 * b_eduyrs * b_FatherEduyears * cov_eduyrs_FatherEduyears
+
+# Calculate the actual variance of hinctnta
+sd_hinctnta <- sd(ess_se$hinctnta, na.rm = TRUE)
+var_hinctnta <- sd_hinctnta^2
+
+VarE_eduyrs <- b_eduyrs^2 * sd_eduyrs^2
+VarE_FatherEduyears <- b_FatherEduyears^2 * sd_FatherEduyears^2
+VarE_Cov <- 2 * b_eduyrs * b_FatherEduyears * cov_eduyrs_FatherEduyears
+
+Calibration_r2 <- Calibration/var_hinctnta
+```
+
+```{r}
+#| label: tbl-var-decomp-hu
+#| tbl-cap: "Variance decomposition results (Hungary)"
+#| tbl-pos: H
+#| echo: false
+
+library(dplyr)
+library(gt)
+
+var_decomp_tbl <- tibble::tibble(
+  Component = c(
+    "Calibration",
+    "Household income",
+    "Years of education",
+    "Father's years of education",
+    "Covariance term"
+  ),
+  Value = c(
+    Calibration,
+    var_hinctnta,
+    VarE_eduyrs,
+    VarE_FatherEduyears,
+    VarE_Cov
+  )
+)
+
+var_decomp_share_tbl <- var_decomp_tbl |>
+  mutate(Share = ifelse(Component == "Calibration", NA_real_, Value / var_hinctnta)) |>
+  filter(Component != "Calibration")
+
+var_decomp_share_tbl |>
+  gt() |>
+  fmt_markdown(columns = Component) |>
+  fmt_number(columns = c(Value), decimals = 3) |>
+  fmt_percent(columns = Share, decimals = 1) |>
+  cols_label(
+    Component = "Component",
+    Value     = "Value",
+    Share     = "Share of Total"
+  ) |>
+  cols_align(align = "center", columns = everything()) |>
+  cols_width(
+    Component ~ px(280),
+    Value     ~ px(160),
+    Share     ~ px(160)
+  ) |>
+  tab_options(
+    table.width = px(620),
+    table.align = "center",
+    data_row.padding = px(4),
+    column_labels.padding = px(6)
+  ) |> 
+  tab_source_note(
+    md(sprintf("Calibration of $\\mathrm{R}^{2}$: %.3f", Calibration_r2))
+  )
+```
+
+
+
+The decomposition suggests that intergenerational income elasticity partially caused by father's education and its covariance with individual's education are more salient in Hungary. Institutional differences could underlie these contrasts. In other words, Sweden and Hungary differ in their intergenerational income inequality mechanisms.
+
+Taken together, the Lorenz curves and Gini coefficients align with the variance decomposition: Sweden's lower overall inequality coincides with a larger role for individual's education, whereas the pattern in Hungary highlights father's education.
