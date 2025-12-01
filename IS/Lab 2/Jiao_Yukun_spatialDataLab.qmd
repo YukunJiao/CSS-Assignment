@@ -1,0 +1,168 @@
+---
+title: "Spatial Data Lab"
+author: "Yukun Jiao"
+date: last-modified
+date-format: "MMMM DD, YYYY"
+format: 
+  html: 
+    embed-resources: true
+execute: 
+  warning: false
+  message: false
+---
+
+# Exercise 1 - Exploring geographic data with sf
+
+```{r}
+library(sf)
+library(dplyr)
+library(purrr)
+
+st_read <- function(...){
+  sf::st_read(..., quiet = TRUE)
+}
+
+nybb_shapefile_path <- "shape/nybb/nybb.shp"
+nybb_shapefile <- st_read(nybb_shapefile_path)
+nybb_geojson <- st_read("shape/nybb.geojson")
+nybb_shapefile |> 
+  filter(Shape_Area > 1200000000) |> 
+  count()
+
+nybb_df <- 
+  nybb_shapefile |> 
+  st_drop_geometry(geometry)
+```
+
+There are three boroughs with shape area more than 1,200,000,000 sqft.
+
+# Exercise - 2 Areal mapping with CRSs
+
+```{r}
+usCounties_path <- "shape/usCounties2018/cb_2018_us_county_5m.shp"
+usCounties <- st_read(usCounties_path)
+
+Area_EqualArea <- "epsg:6933"
+Area_Equidistant <- "epsg:4087"
+Area_Comformal <- "+proj=lcc +lat_0=0 +lon_0=25 +lat_1=20 +lat_2=-23 
++x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs +type=crs"
+Area_UTM <- "epsg:32632"
+
+crs_list <- c(
+  EqualArea   = Area_EqualArea,
+  Equidistant = Area_Equidistant,
+  Conformal   = Area_Comformal,
+  UTM         = Area_UTM
+)
+
+
+areas_list <- lapply(crs_list, function(crs) st_area(st_transform(usCounties, crs)))
+
+areas_df <- as.data.frame(areas_list)
+
+baseline <- areas_df$EqualArea
+
+pct_list <- map(areas_df, ~(. - baseline) / baseline)
+pct_df <- as.data.frame(pct_list)
+head(pct_df)
+```
+
+# Exercise - 3 Cartography of areal differences
+```{r}
+library(tmap)
+
+usCounties_pct_not_mainland <- usCounties |>
+  mutate(
+    pct_EqualArea   = 0,
+    pct_Equidistant = pct_df$Equidistant * 100,
+    pct_Conformal   = pct_df$Conformal   * 100,
+    pct_UTM         = pct_df$UTM         * 100
+  )
+
+usCounties_pct <- usCounties_pct_not_mainland |>
+  filter(
+    !STATEFP %in% c("02", "15", "60", "66", "69", "72", "78")
+  )
+
+var_map <- c(
+  EqualArea   = "pct_EqualArea",
+  Equidistant = "pct_Equidistant",
+  Conformal   = "pct_Conformal",
+  UTM         = "pct_UTM"
+)
+
+
+maps <- imap(crs_list, ~ {
+  crs_name <- .y
+  crs_val  <- .x
+  var_name <- var_map[[crs_name]]
+
+  if (crs_name == "EqualArea") {
+  tm_shape(usCounties_pct, crs = "EPSG: 9311") +
+  tm_polygons(fill.legend = tm_legend(title = "Percent difference (%)")) +
+    tm_borders() +
+    tm_compass(position = c("right", "top")) +
+    tm_scalebar(position = c("left", "bottom")) +
+    tm_credits("Source: US Census",
+               position = c("RIGHT", "BOTTOM")) +
+      tm_title(paste("Area percent difference –", crs_name))
+  } else {
+      tm_shape(usCounties_pct, crs = "EPSG: 9311") +
+  tm_polygons(var_name,
+                fill.scale = tm_scale_continuous(midpoint = NA),
+                fill.legend = tm_legend(title = "Percent difference (%)")) +
+    tm_borders() +
+    tm_compass(position = c("right", "top")) +
+    tm_scalebar(position = c("left", "bottom")) +
+    tm_credits("Source: US Census",
+               position = c("RIGHT", "BOTTOM")) +
+      tm_title(paste("Area percent difference –", crs_name))
+    }
+})
+
+maps$EqualArea
+maps$Equidistant
+maps$Conformal
+maps$UTM
+```
+
+# Exercise - 4 Geoprocessing evictions in NYC
+```{r}
+nybb <- st_read(nybb_shapefile_path)
+brooklyn <- nybb |> 
+  filter(BoroName == "Brooklyn")
+
+Subway_path <- "shape/SubwayLines/geo_export_285a34c5-3389-4bdd-841f-d5ddafcc41be.shp"
+subway <- st_read(Subway_path)
+
+subway_bk <- subway |>
+  st_transform(st_crs(brooklyn)) |>
+  st_filter(brooklyn)
+
+brooklyn_2263   <- st_transform(brooklyn, 2263)
+subway_bk_2263  <- st_transform(subway_bk, 2263)
+
+buffer_quarter_mile <- subway_bk_2263 |>
+  st_buffer(dist = 1320) |> 
+  st_union()
+
+evictions_path <- "shape/evictions/evictions.shp"
+evictions <- st_read(evictions_path)
+
+evictions_bk <- evictions |>
+  st_transform(2263) |> 
+  st_filter(brooklyn_2263)
+
+evictions_in_buf <- evictions_bk |>
+  st_filter(buffer_quarter_mile)
+n_in <- nrow(evictions_in_buf)
+
+inside_logical <- st_intersects(evictions_bk, buffer_quarter_mile, sparse = FALSE)[, 1]
+evictions_out_buf <- evictions_bk[!inside_logical, ]
+
+n_out <- nrow(evictions_out_buf)
+
+n_in
+n_out
+```
+
