@@ -1,0 +1,441 @@
+---
+title: "Inequality and Segregation Lab 3"
+author: "Yukun Jiao"
+date: "2025-12-01"
+toc: false
+format:
+  html: 
+    embed-resources: true
+knitr: 
+  opts_chunk:
+    fig.align: center
+editor: 
+  markdown: 
+    wrap: 72
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+library(tidyverse)
+library(ggforce)
+library(cowplot)
+library(RANN)
+library(sf)
+library(gt)
+library(knitr)
+library(kableExtra)
+
+make_housing<-function(dim=100,n=10000,foci=c(0.2,0.8),noise=1,pow=2) {
+  xy <-bind_rows(
+    expand_grid( x=seq(0,dim)/dim, y=seq(0.5,dim-0.5)/dim ) ,
+    expand_grid( x=seq(0.5,dim-0.5)/dim , y=seq(0,dim)/dim) )
+  if(n>=nrow(xy)) {
+    return(xy)
+  }
+  else {
+    foci<-as_tibble(expand.grid(x_f=foci,y_f=foci))
+    places<-expand_grid(xy,foci) |> 
+      mutate(d=sqrt((x-x_f)^2+(y-y_f)^2)) |> 
+      group_by(x,y) |> 
+      summarize(u=sum(1/(d+0.001)^pow)) |> 
+      ungroup() |> 
+      mutate(u=u/sd(u)) |> 
+      mutate(v = u + rnorm(n(),0,sd=noise)) |> 
+      filter(v>=sort(v,decreasing=T)[n]) |> 
+      select(x,y)
+    return(places)
+  }
+}
+```
+
+
+# Modifying the Segregation Scenarios
+
+## reducing to a single focus.
+```{r}
+#| warning: false
+
+foci<-as_tibble(expand.grid(x_f=c(0.5),y_f=c(0.5)))
+
+
+places<-make_housing(pow=1,noise=0.5,foci=c(0.5),n=10000)
+# ggplot() +
+#   geom_point(data=places,aes(x=x,y=y),size=0.1) +
+#   geom_point(data=foci,aes(x=x_f,y=y_f),color="green3",size=5,shape=4,stroke=3) +
+#   theme_void() + coord_fixed()
+
+places<-places |> 
+  expand_grid(foci) |> 
+  mutate(d=sqrt((x-x_f)^2+(y-y_f)^2)) |> 
+  mutate(u=1/d) |> 
+  group_by(x,y) |> 
+  summarize(u=sum(u)) |> 
+  ungroup() |> # do this so calculations aren't performed within combos of x & y
+  mutate(C=u+rnorm(n=length(u),mean=0,sd=sd(u))) |> 
+  mutate(C=factor(ifelse(C>median(C),"red","blue"))) |> 
+  ungroup() |> 
+  mutate(A=u+rnorm(n=length(u),mean=0,sd=0*sd(u))) |>  # no noise!
+  mutate(A=factor(ifelse(A>median(A),"red","blue"))) |> 
+  mutate(B=u+rnorm(n=length(u),mean=0,sd=0.2*sd(u))) |> # a bit of noise
+  mutate(B=factor(ifelse(B>median(B),"red","blue"))) |> 
+  mutate(D=u+rnorm(n=length(u),mean=0,sd=3*sd(u))) |> # a lot of noise
+  mutate(D=factor(ifelse(D>median(D),"red","blue")))
+
+# ggplot(places,aes(x=x,y=y,color=C)) +
+#   geom_point() + 
+#   scale_color_identity() +
+#   theme_void() + 
+#   coord_fixed() + 
+#   theme(legend.position = "none")
+
+places <- places |> pivot_longer(cols=c("A","B","C","D"),
+               names_to="city",
+               values_to="group")
+
+ggplot(data=slice(places,sample(1:nrow(places))), # random plot order
+       aes(x=x,y=y,color=group)) + 
+  geom_point(size=0.1) + 
+  scale_color_identity() +
+  coord_fixed() +
+  theme_void() + 
+  theme(legend.position = "none", aspect.ratio = 1) + 
+  facet_grid(cols=vars(city)) -> gg_points
+
+# gg_points
+
+grid_dim<-10
+blocks<-places |> 
+  mutate(x=ceiling(x*grid_dim)/grid_dim,y=ceiling(y*grid_dim)/grid_dim) |> 
+  group_by(city,x,y) |> 
+  summarize(red=sum(ifelse(group=="red",1,0)),
+            blue=sum(ifelse(group=="blue",1,0))) |> 
+  mutate(`% red`=100*red/(red+blue))
+
+ggplot(blocks,aes(x=x,y=y,fill=`% red`)) + 
+  geom_raster() + 
+  facet_grid(cols=vars(city)) + 
+  coord_fixed() +
+  scale_fill_gradient2(midpoint=50,high="red",mid="white",low="blue") + 
+  theme_void() ->
+  gg_blocks
+
+plot_grid(gg_points,gg_blocks,nrow=2,align="hv",axis="r")
+```
+
+## Increasing the number of foci.
+```{r}
+#| warning: false
+
+foci<-as_tibble(expand.grid(x_f=c(0.1, 0.5, 0.75),y_f=c(0.1, 0.5, 0.75)))
+
+places<-make_housing(pow=1,noise=0.5,foci=c(0.5),n=10000)
+# ggplot() +
+#   geom_point(data=places,aes(x=x,y=y),size=0.1) +
+#   geom_point(data=foci,aes(x=x_f,y=y_f),color="green3",size=5,shape=4,stroke=3) +
+#   theme_void() + coord_fixed()
+
+places<-places |> 
+  expand_grid(foci) |> 
+  mutate(d=sqrt((x-x_f)^2+(y-y_f)^2)) |> 
+  mutate(u=1/d) |> 
+  group_by(x,y) |> 
+  summarize(u=sum(u)) |> 
+  ungroup() |> # do this so calculations aren't performed within combos of x & y
+  mutate(C=u+rnorm(n=length(u),mean=0,sd=sd(u))) |> 
+  mutate(C=factor(ifelse(C>median(C),"red","blue"))) |> 
+  ungroup() |> 
+  mutate(A=u+rnorm(n=length(u),mean=0,sd=0*sd(u))) |>  # no noise!
+  mutate(A=factor(ifelse(A>median(A),"red","blue"))) |> 
+  mutate(B=u+rnorm(n=length(u),mean=0,sd=0.2*sd(u))) |> # a bit of noise
+  mutate(B=factor(ifelse(B>median(B),"red","blue"))) |> 
+  mutate(D=u+rnorm(n=length(u),mean=0,sd=3*sd(u))) |> # a lot of noise
+  mutate(D=factor(ifelse(D>median(D),"red","blue")))
+
+
+# ggplot(places,aes(x=x,y=y,color=C)) +
+#   geom_point() + 
+#   scale_color_identity() +
+#   theme_void() + 
+#   coord_fixed() + 
+#   theme(legend.position = "none")
+
+places <- places |> pivot_longer(cols=c("A","B","C","D"),
+               names_to="city",
+               values_to="group")
+
+ggplot(data=slice(places,sample(1:nrow(places))), # random plot order
+       aes(x=x,y=y,color=group)) + 
+  geom_point(size=0.1) + 
+  scale_color_identity() +
+  coord_fixed() +
+  theme_void() + 
+  theme(legend.position = "none", aspect.ratio = 1) + 
+  facet_grid(cols=vars(city)) -> gg_points
+
+# gg_points
+
+
+grid_dim<-10
+blocks<-places |> 
+  mutate(x=ceiling(x*grid_dim)/grid_dim,y=ceiling(y*grid_dim)/grid_dim) |> 
+  group_by(city,x,y) |> 
+  summarize(red=sum(ifelse(group=="red",1,0)),
+            blue=sum(ifelse(group=="blue",1,0))) |> 
+  mutate(`% red`=100*red/(red+blue))
+
+ggplot(blocks,aes(x=x,y=y,fill=`% red`)) + 
+  geom_raster() + 
+  facet_grid(cols=vars(city)) + 
+  coord_fixed() +
+  scale_fill_gradient2(midpoint=50,high="red",mid="white",low="blue") + 
+  theme_void() ->
+  gg_blocks
+
+plot_grid(gg_points,gg_blocks,nrow=2,align="hv",axis="r")
+```
+## Changing the spatial distribution of the foci.
+```{r}
+#| warning: false
+
+foci<-as_tibble(expand.grid(x_f=c(0.1),y_f=c(0.1)))
+
+places<-make_housing(pow=1,noise=0.5,foci=c(0.5),n=10000)
+ggplot() +
+  geom_point(data=places,aes(x=x,y=y),size=0.1) +
+  geom_point(data=foci,aes(x=x_f,y=y_f),color="green3",size=5,shape=4,stroke=3) +
+  theme_void() + coord_fixed()
+
+places<-places |> 
+  expand_grid(foci) |> 
+  mutate(d=sqrt((x-x_f)^2+(y-y_f)^2)) |> 
+  mutate(u=1/d) |> 
+  group_by(x,y) |> 
+  summarize(u=sum(u)) |> 
+  ungroup() |> # do this so calculations aren't performed within combos of x & y
+  mutate(C=u+rnorm(n=length(u),mean=0,sd=sd(u))) |> 
+  mutate(C=factor(ifelse(C>median(C),"red","blue"))) |> 
+  ungroup() |> 
+  mutate(A=u+rnorm(n=length(u),mean=0,sd=0*sd(u))) |>  # no noise!
+  mutate(A=factor(ifelse(A>median(A),"red","blue"))) |> 
+  mutate(B=u+rnorm(n=length(u),mean=0,sd=0.2*sd(u))) |> # a bit of noise
+  mutate(B=factor(ifelse(B>median(B),"red","blue"))) |> 
+  mutate(D=u+rnorm(n=length(u),mean=0,sd=3*sd(u))) |> # a lot of noise
+  mutate(D=factor(ifelse(D>median(D),"red","blue")))
+
+
+# ggplot(places,aes(x=x,y=y,color=C)) +
+#   geom_point() + 
+#   scale_color_identity() +
+#   theme_void() + 
+#   coord_fixed() + 
+#   theme(legend.position = "none")
+
+places <- places |> pivot_longer(cols=c("A","B","C","D"),
+               names_to="city",
+               values_to="group")
+
+ggplot(data=slice(places,sample(1:nrow(places))), # random plot order
+       aes(x=x,y=y,color=group)) + 
+  geom_point(size=0.1) + 
+  scale_color_identity() +
+  coord_fixed() +
+  theme_void() + 
+  theme(legend.position = "none", aspect.ratio = 1) + 
+  facet_grid(cols=vars(city)) -> gg_points
+gg_points
+```
+
+
+<!-- -   Switching to a linear assignment function. -->
+<!-- -   Applying a logarithmic or some other non-linear assignment function. -->
+<!-- -   Increasing the share of red dots. -->
+<!-- -   Decreasing the share of red dots. -->
+<!-- -   CHALLENGE: Making the *locations* (*not* a particular group) denser around the foci. -->
+
+
+
+
+# Evenness and exposure measures of segregation
+
+## Confirm that the index of dissimilarity obeys composition invariance principle by doubling the size of the "red" population in each neighborhood and re-calculating the indices.
+```{r}
+calcD <- function(x,y) {
+  result<-0.5*sum(abs(x/sum(x)-y/sum(y)))
+  return(result)
+}
+
+grid_dim<-10
+blocks<-places |> 
+  mutate(x=ceiling(x*grid_dim)/grid_dim,y=ceiling(y*grid_dim)/grid_dim) |> 
+  group_by(city,x,y) |> 
+  summarize(red=sum(ifelse(group=="red",1,0)),
+            blue=sum(ifelse(group=="blue",1,0))) |> 
+  mutate(`% red`=100*red/(red+blue))
+
+
+D0 <- blocks |> 
+  group_by(city) |> 
+  summarize(D = calcD(red, blue), .groups="drop")
+
+blocks_red2 <- blocks |> mutate(red = 2*red)
+
+D1 <- blocks_red2 |> 
+  group_by(city) |> 
+  summarize(D = calcD(red, blue), .groups="drop")
+```
+
+```{r}
+#| tbl-pos: H
+
+left_join(D0, D1, by="city", suffix=c("_orig","_red2")) |> 
+  gt() |>
+  fmt_number(everything(), decimals = 3)
+```
+
+
+
+## Does the two group information theory index fulfill the composition invariance principle?
+```{r}
+calcH <- function(...) { # vectors or dataframe for the group counts
+  t.jm<-cbind(...)      # bind together the group counts 
+  t.j<-rowSums(t.jm)    # count in each neighborhood
+  T<-sum(t.jm)        # total population count
+  M<-ncol(t.jm)         # count the number of groups (columns)
+  p.m<-colSums(t.jm)/T # calculate the population proportions
+  E<-sum(p.m*log(1/p.m,M),na.rm=TRUE) # population entropy
+  p.jm<-t.jm/t.j        # neighborhood-level proportions
+  E.j<-rowSums(p.jm*log(1/p.jm,M),na.rm=TRUE) # neighborhood entropies
+  H<-1/(T*E)*sum(t.j*(E-E.j)) # H
+  return(H)
+}
+
+H0 <- blocks |> group_by(city) |> summarize(H = calcH(red, blue))
+H1 <- blocks_red2 |> group_by(city) |> summarize(H = calcH(red, blue))
+
+left_join(H0, H1, by="city", suffix=c("_orig","_red2")) |> 
+  gt() |>
+  fmt_number(everything(), decimals = 3)
+```
+
+```{r}
+#| tbl-pos: H
+
+left_join(H0, H1, by="city", suffix=c("_orig","_red2")) |> 
+  gt() |>
+  fmt_number(everything(), decimals = 3)
+```
+
+
+## Demonstrate that the exposure and isolation indices are not compositionally invariant.
+```{r}
+expo0 <- blocks |>
+  group_by(city) |>
+  summarize(
+    P_RR = weighted.mean(red/(red+blue),  w = red),   # isolation of red
+    P_RB = weighted.mean(blue/(red+blue), w = red),   # exposure red->blue
+    .groups = "drop"
+  )
+
+
+blocks_red2 <- blocks |> mutate(red = 2*red)
+
+expo1 <- blocks_red2 |>
+  group_by(city) |>
+  summarize(
+    P_RR = weighted.mean(red/(red+blue),  w = red),
+    P_RB = weighted.mean(blue/(red+blue), w = red),
+    .groups = "drop"
+  )
+
+expo_diff <- left_join(expo0, expo1, by="city", suffix=c("_orig","_red2")) |>
+  transmute(
+    City = city,
+    diff_PRR = P_RR_red2 - P_RR_orig,
+    diff_PRB = P_RB_red2 - P_RB_orig
+  )
+```
+```{r}
+#| tbl-pos: H
+
+expo_diff |> 
+  gt() |>
+  fmt_number(everything(), decimals = 3)
+```
+
+
+<!-- -   What happens to your measures of evenness as you divide up the city into more or fewer blocks? -->
+<!-- -   How low do the segregation indices go when agents are assigned totally at random (i.e., no relationship between distance to foci and placement of groups, or lots of random noise). -->
+
+
+# Experimenting with spatial segregation indices
+## What happens to the segregation index as you increase or decrease the number of nearest neighbors that are considered?
+```{r}
+nn_bespoke<-function(g,x,y,k=10,searchtype="standard",radius=0) {
+  knn<-nn2(data=cbind(x,y),k=k,searchtype=searchtype,radius=radius)
+  x<-knn$nn.idx
+  lapply(seq_len(nrow(x)), function(i) x[i,]) |> 
+    lapply(function(x) `[`(g,x)) |> 
+    lapply(table) |> 
+    bind_rows() |> 
+    mutate(across(everything(),as.integer))
+}
+
+k_grid <- c(5, 20)
+expo_by_k <- lapply(k_grid, function(k){
+  places |>
+    group_by(city) |>
+    mutate(nn_bespoke(group, x, y, k = k)) |>
+    group_by(city, group) |>
+    summarize(P_red = mean(red/k), P_blue = mean(blue/k), .groups="drop") |>
+    mutate(k = k)
+}) |>
+  bind_rows()
+
+# expo_by_k |> arrange(k, city, group) |> arrange(k, city) |> 
+#   gt() |>
+#   fmt_number(everything(), decimals = 3)
+
+
+```
+```{r}
+#| tbl-pos: H
+
+expo_by_k |> filter(group=="blue") |> arrange(k, city) |> 
+  gt() |>
+  fmt_number(everything(), decimals = 3)
+```
+
+
+```{r}
+tab_P_RR <- expo_by_k %>%
+  filter(group == "red") %>%
+  select(city, k, P_RR = P_red) %>%
+  pivot_wider(names_from = k, values_from = P_RR, names_prefix = "k=") %>%
+  arrange(city)
+
+tab_P_BR <- expo_by_k %>%
+  filter(group == "blue") %>%
+  select(city, k, P_BR = P_red) %>%
+  pivot_wider(names_from = k, values_from = P_BR, names_prefix = "k=") %>%
+  arrange(city)
+```
+
+```{r}
+#| tbl-cap: "Red isolation (P_RR) by neighborhood size (k)"
+
+tab_P_RR |> 
+  gt() |>
+  fmt_number(everything(), decimals = 3)
+```
+
+```{r}
+#| tbl-cap: "Blue-to-red exposure (P_BR) by neighborhood size (k)"
+
+tab_P_BR |> 
+  gt() |>
+  fmt_number(everything(), decimals = 3)
+```
+
