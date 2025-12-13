@@ -13,7 +13,7 @@ editor:
   markdown: 
     wrap: 72
 execute:
-  echo: false
+  echo: true
   warning: false
   message: false
 ---
@@ -62,10 +62,10 @@ foci<-as_tibble(expand.grid(x_f=c(0.5),y_f=c(0.5)))
 
 
 places<-make_housing(pow=1,noise=0.5,foci=c(0.5),n=10000)
-# ggplot() +
-#   geom_point(data=places,aes(x=x,y=y),size=0.1) +
-#   geom_point(data=foci,aes(x=x_f,y=y_f),color="green3",size=5,shape=4,stroke=3) +
-#   theme_void() + coord_fixed()
+ggplot() +
+  geom_point(data=places,aes(x=x,y=y),size=0.1) +
+  geom_point(data=foci,aes(x=x_f,y=y_f),color="green3",size=5,shape=4,stroke=3) +
+  theme_void() + coord_fixed()
 
 places<-places |> 
   expand_grid(foci) |> 
@@ -84,12 +84,6 @@ places<-places |>
   mutate(D=u+rnorm(n=length(u),mean=0,sd=3*sd(u))) |> # a lot of noise
   mutate(D=factor(ifelse(D>median(D),"red","blue")))
 
-# ggplot(places,aes(x=x,y=y,color=C)) +
-#   geom_point() + 
-#   scale_color_identity() +
-#   theme_void() + 
-#   coord_fixed() + 
-#   theme(legend.position = "none")
 
 places <- places |> pivot_longer(cols=c("A","B","C","D"),
                names_to="city",
@@ -131,11 +125,11 @@ plot_grid(gg_points,gg_blocks,nrow=2,align="hv",axis="r")
 
 foci<-as_tibble(expand.grid(x_f=c(0.1, 0.5, 0.75),y_f=c(0.1, 0.5, 0.75)))
 
-places<-make_housing(pow=1,noise=0.5,foci=c(0.5),n=10000)
-# ggplot() +
-#   geom_point(data=places,aes(x=x,y=y),size=0.1) +
-#   geom_point(data=foci,aes(x=x_f,y=y_f),color="green3",size=5,shape=4,stroke=3) +
-#   theme_void() + coord_fixed()
+places<-make_housing(pow=1,noise=0.5,foci=c(0.1, 0.5, 0.75),n=10000)
+ggplot() +
+  geom_point(data=places,aes(x=x,y=y),size=0.1) +
+  geom_point(data=foci,aes(x=x_f,y=y_f),color="green3",size=5,shape=4,stroke=3) +
+  theme_void() + coord_fixed()
 
 places<-places |> 
   expand_grid(foci) |> 
@@ -153,14 +147,6 @@ places<-places |>
   mutate(B=factor(ifelse(B>median(B),"red","blue"))) |> 
   mutate(D=u+rnorm(n=length(u),mean=0,sd=3*sd(u))) |> # a lot of noise
   mutate(D=factor(ifelse(D>median(D),"red","blue")))
-
-
-# ggplot(places,aes(x=x,y=y,color=C)) +
-#   geom_point() + 
-#   scale_color_identity() +
-#   theme_void() + 
-#   coord_fixed() + 
-#   theme(legend.position = "none")
 
 places <- places |> pivot_longer(cols=c("A","B","C","D"),
                names_to="city",
@@ -202,7 +188,7 @@ plot_grid(gg_points,gg_blocks,nrow=2,align="hv",axis="r")
 
 foci<-as_tibble(expand.grid(x_f=c(0.1),y_f=c(0.1)))
 
-places<-make_housing(pow=1,noise=0.5,foci=c(0.5),n=10000)
+places<-make_housing(pow=1,noise=0.5,foci=c(0.1),n=10000)
 ggplot() +
   geom_point(data=places,aes(x=x,y=y),size=0.1) +
   geom_point(data=foci,aes(x=x_f,y=y_f),color="green3",size=5,shape=4,stroke=3) +
@@ -224,7 +210,6 @@ places<-places |>
   mutate(B=factor(ifelse(B>median(B),"red","blue"))) |> 
   mutate(D=u+rnorm(n=length(u),mean=0,sd=3*sd(u))) |> # a lot of noise
   mutate(D=factor(ifelse(D>median(D),"red","blue")))
-
 
 # ggplot(places,aes(x=x,y=y,color=C)) +
 #   geom_point() + 
@@ -289,6 +274,7 @@ D1 <- blocks_red2 |>
 
 ```{r}
 #| tbl-pos: H
+#| tbl-cap: "Dissimilarity index before and after doubling the red population"
 
 left_join(D0, D1, by="city", suffix=c("_orig","_red2")) |> 
   gt() |>
@@ -296,6 +282,8 @@ left_join(D0, D1, by="city", suffix=c("_orig","_red2")) |>
 ```
 
 
+Doubling the size of the red population does not change the value of the dissimilarity index.
+This confirms that the dissimilarity index satisfies the composition invariance principle.
 
 ## Does the two group information theory index fulfill the composition invariance principle?
 ```{r}
@@ -314,20 +302,18 @@ calcH <- function(...) { # vectors or dataframe for the group counts
 
 H0 <- blocks |> group_by(city) |> summarize(H = calcH(red, blue))
 H1 <- blocks_red2 |> group_by(city) |> summarize(H = calcH(red, blue))
-
-left_join(H0, H1, by="city", suffix=c("_orig","_red2")) |> 
-  gt() |>
-  fmt_number(everything(), decimals = 3)
 ```
 
 ```{r}
 #| tbl-pos: H
+#| tbl-cap: "Information theory index (H) before vs. after doubling the red population"
 
 left_join(H0, H1, by="city", suffix=c("_orig","_red2")) |> 
   gt() |>
   fmt_number(everything(), decimals = 3)
 ```
 
+Yes. The two group information theory index fulfills the composition invariance principle.
 
 ## Demonstrate that the exposure and isolation indices are not compositionally invariant.
 ```{r}
@@ -359,16 +345,14 @@ expo_diff <- left_join(expo0, expo1, by="city", suffix=c("_orig","_red2")) |>
 ```
 ```{r}
 #| tbl-pos: H
+#| tbl-cap: "Change in exposure/isolation after doubling the red population"
 
 expo_diff |> 
   gt() |>
   fmt_number(everything(), decimals = 3)
 ```
 
-
-<!-- -   What happens to your measures of evenness as you divide up the city into more or fewer blocks? -->
-<!-- -   How low do the segregation indices go when agents are assigned totally at random (i.e., no relationship between distance to foci and placement of groups, or lots of random noise). -->
-
+The table above shows that the exposure and isolation indices are not compositionally invariant.
 
 # Experimenting with spatial segregation indices
 ## What happens to the segregation index as you increase or decrease the number of nearest neighbors that are considered?
@@ -394,29 +378,32 @@ expo_by_k <- lapply(k_grid, function(k){
 }) |>
   bind_rows()
 
+expo_by_k_A <- expo_by_k |> 
+  filter(city == "A")
 # expo_by_k |> arrange(k, city, group) |> arrange(k, city) |> 
 #   gt() |>
 #   fmt_number(everything(), decimals = 3)
-
-
 ```
+
 ```{r}
 #| tbl-pos: H
 
-expo_by_k |> filter(group=="blue") |> arrange(k, city) |> 
-  gt() |>
-  fmt_number(everything(), decimals = 3)
+# expo_by_k_A |> 
+#   filter(group=="blue") |> 
+#   arrange(k, city) |> 
+#   gt() |>
+#   fmt_number(everything(), decimals = 3)
 ```
 
 
 ```{r}
-tab_P_RR <- expo_by_k %>%
+tab_P_RR <- expo_by_k_A %>%
   filter(group == "red") %>%
   select(city, k, P_RR = P_red) %>%
   pivot_wider(names_from = k, values_from = P_RR, names_prefix = "k=") %>%
   arrange(city)
 
-tab_P_BR <- expo_by_k %>%
+tab_P_BR <- expo_by_k_A %>%
   filter(group == "blue") %>%
   select(city, k, P_BR = P_red) %>%
   pivot_wider(names_from = k, values_from = P_BR, names_prefix = "k=") %>%
@@ -438,4 +425,95 @@ tab_P_BR |>
   gt() |>
   fmt_number(everything(), decimals = 3)
 ```
+With the number $k$ increasing, measured segregation decreases. Larger $k$ averages over broader neighborhoods, smoothing local differences.
 
+## Does the index work as you expect for the different city scenarios? How do the values compare for City A vs. B vs. C vs. D?
+```{r}
+#| tbl-cap: "Blue group neighborhood composition across cities and k"
+
+expo_by_k |> 
+  filter(group=="blue") |> 
+  arrange(k, city) |> 
+  gt() |>
+  fmt_number(everything(), decimals = 3)
+
+# 
+# tab_P_RR <- expo_by_k %>%
+#   filter(group == "red") %>%
+#   select(city, k, P_RR = P_red) %>%
+#   pivot_wider(names_from = k, values_from = P_RR, names_prefix = "k=") %>%
+#   arrange(city)
+# 
+# tab_P_BR <- expo_by_k %>%
+#   filter(group == "blue") %>%
+#   select(city, k, P_BR = P_red) %>%
+#   pivot_wider(names_from = k, values_from = P_BR, names_prefix = "k=") %>%
+#   arrange(city)
+
+# tab_P_RR |> 
+#   gt() |>
+#   fmt_number(everything(), decimals = 3)
+
+# tab_P_BR |> 
+#   gt() |>
+#   fmt_number(everything(), decimals = 3)
+```
+
+Yes. Across all neighborhood sizes, segregation is highest in City A, followed by B, C, and D.
+This ordering matches the increasing level of noise introduced in each scenario.
+
+## How do the values of the spatial dissimilarity index vary across the different cities as you increase or decrease the number of nearest neighbors?
+
+```{r}
+calcD<-function(g,...) {
+  p.j<-cbind(...)
+  p.j<-p.j/rowSums(p.j)
+  p<-table(g)
+  T<-sum(p)
+  p<-p/T
+  nms<-names(p)
+  result<-1/(2*T)*sum(abs(p.j[,nms[1]]/p[1] - p.j[,nms[2]]/p[2]))
+  return(result)
+}
+
+spatial_dissimilarity <- function(city_name = "A", k_num = 10) {
+  city<-filter(places,city==city_name)
+  knn_nbhd<-nn2(data=city[,c("x","y")],k=k_num)
+
+  x<-knn_nbhd$nn.idx
+  x<-lapply(seq_len(nrow(x)), function(i) x[i,])
+
+  g<-pull(city,group)
+  x<-lapply(x,function(x) `[`(g,x)) 
+  bespoke<-lapply(x,table) |> 
+      bind_rows() |> 
+     mutate(across(everything(),as.integer)) 
+  bespoke_city<-bind_cols(city,bespoke)
+  bespoke_city |> summarize(D=calcD(group,red,blue))
+}
+```
+
+```{r}
+cities <- c("A","B","C","D")
+ks <- c(5, 10, 20)
+grid <- tidyr::expand_grid(city = cities, k = ks)
+
+sd_all <- grid |>
+  rowwise() |>
+  mutate(D = spatial_dissimilarity(city, k)$D) |>
+  ungroup()
+```
+
+```{r}
+#| fig-cap: "Spatial dissimilarity of Each City"
+
+ggplot(sd_all, aes(x = k, y = D, group = city)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(trans = "log10") +
+  labs(x = "k (nearest neighbors)", y = "Spatial dissimilarity (D)")
+```
+
+For all cities, spatial dissimilarity declines as k increases.
+Cities with stronger underlying spatial structure (A and B) maintain higher dissimilarity at all scales.
+Cities with more randomness (C and D) show lower values and converge more quickly as neighborhoods grow.
